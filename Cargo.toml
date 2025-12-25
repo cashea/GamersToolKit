@@ -1,0 +1,55 @@
+[package]
+name = "gamers-toolkit"
+version = "0.1.0"
+edition = "2021"
+description = "Real-time game analysis and assistance overlay - read-only screen parsing"
+license = "MIT"
+repository = "https://github.com/yourusername/gamers-toolkit"
+keywords = ["game", "overlay", "ocr", "analysis"]
+categories = ["games", "multimedia"]
+
+[dependencies]
+# GUI & Overlay
+egui = "0.29"
+egui_overlay = "0.9"
+
+# Screen Capture (Windows Graphics Capture API)
+windows-capture = "2.0"
+
+# ML/OCR (ONNX Runtime for PaddleOCR models)
+ort = "2.0"
+
+# Rules Engine (embedded scripting)
+rhai = "1.19"
+
+# Storage
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Audio notifications
+rodio = "0.19"
+
+# Async runtime
+tokio = { version = "1.41", features = ["full"] }
+
+# Image processing
+image = "0.25"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Configuration
+directories = "5.0"
+toml = "0.8"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

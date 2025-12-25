@@ -1,0 +1,2377 @@
+[
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-80f9-bce3-fd06456b6b98",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "paragraph",
+    "paragraph": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "High-Level Game Specification (Primary)",
+            "link": null
+          },
+          "annotations": {
+            "bold": true,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "High-Level Game Specification (Primary)",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-80bb-aedc-cf1ca544a405",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "divider",
+    "divider": {}
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8039-a5b3-c55ba5a442b1",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "heading_3",
+    "heading_3": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "1. Purpose",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "1. Purpose",
+          "href": null
+        }
+      ],
+      "is_toggleable": false,
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-802f-be05-e06e9995dd48",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Provide real-time, read-only analysis of a game’s visual output.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Provide real-time, read-only analysis of a game’s visual output.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8048-b372-ece238c5aa74",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Deliver contextual gameplay assistance via a non-intrusive overlay.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Deliver contextual gameplay assistance via a non-intrusive overlay.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-801d-8233-fddfe3cd45f0",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Operate without modifying game state or inputs.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Operate without modifying game state or inputs.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8032-96ea-d642477fdf72",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "divider",
+    "divider": {}
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8099-9c40-dd0931c81257",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "heading_3",
+    "heading_3": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "2. Scope",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "2. Scope",
+          "href": null
+        }
+      ],
+      "is_toggleable": false,
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-806d-80f2-d3369faf084d",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Screen/video capture only (windowed, borderless, fullscreen).",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Screen/video capture only (windowed, borderless, fullscreen).",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-802a-aaa2-f844661e26eb",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Visual interpretation of HUD and on-screen elements.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Visual interpretation of HUD and on-screen elements.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8042-ae37-fc0cc041ef6e",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Real-time and offline (VOD/screenshot) analysis.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Real-time and offline (VOD/screenshot) analysis.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-80bc-9cbf-d77bbdb713b0",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Single-player and multiplayer compatible (overlay-only).",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Single-player and multiplayer compatible (overlay-only).",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-80f3-b340-ef96d4acddd5",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "divider",
+    "divider": {}
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8010-b422-d24189e2eaae",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "heading_3",
+    "heading_3": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "3. Core Capabilities",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "3. Core Capabilities",
+          "href": null
+        }
+      ],
+      "is_toggleable": false,
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-80fd-8e0b-cf2f550692d6",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Capture",
+            "link": null
+          },
+          "annotations": {
+            "bold": true,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Capture",
+          "href": null
+        },
+        {
+          "type": "text",
+          "text": {
+            "content": ": Low-latency frame capture across resolutions/UI scales.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": ": Low-latency frame capture across resolutions/UI scales.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-80dd-b306-f533f925fd16",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Detection",
+            "link": null
+          },
+          "annotations": {
+            "bold": true,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Detection",
+          "href": null
+        },
+        {
+          "type": "text",
+          "text": {
+            "content": ": Identify HUD elements, icons, text, and basic states.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": ": Identify HUD elements, icons, text, and basic states.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-809f-a640-f0688d50d271",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Analysis",
+            "link": null
+          },
+          "annotations": {
+            "bold": true,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Analysis",
+          "href": null
+        },
+        {
+          "type": "text",
+          "text": {
+            "content": ": Apply game-agnostic rules and optional ML inference.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": ": Apply game-agnostic rules and optional ML inference.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8004-b8cb-c71023a4f8c1",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Guidance",
+            "link": null
+          },
+          "annotations": {
+            "bold": true,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Guidance",
+          "href": null
+        },
+        {
+          "type": "text",
+          "text": {
+            "content": ": Contextual tips, alerts, and summaries.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": ": Contextual tips, alerts, and summaries.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8058-b703-dc41c4457028",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Configuration",
+            "link": null
+          },
+          "annotations": {
+            "bold": true,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Configuration",
+          "href": null
+        },
+        {
+          "type": "text",
+          "text": {
+            "content": ": Game profiles and user preferences.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": ": Game profiles and user preferences.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8012-855d-c9939e907fc4",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "divider",
+    "divider": {}
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8003-b108-c9316be880b9",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "heading_3",
+    "heading_3": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "4. User Experience",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "4. User Experience",
+          "href": null
+        }
+      ],
+      "is_toggleable": false,
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8087-a535-deefba83f9e9",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Transparent overlay rendered above the game.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Transparent overlay rendered above the game.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-808f-958d-c3eb189d647a",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Minimal visual/audio interruptions with throttling.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Minimal visual/audio interruptions with throttling.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8007-be73-d49966e957bb",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Per-game enable/disable and customization.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Per-game enable/disable and customization.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-80a3-8bd5-e109bbb43953",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "divider",
+    "divider": {}
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-80d5-a156-e46d83eca4bf",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "heading_3",
+    "heading_3": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "5. Architecture (Logical)",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "5. Architecture (Logical)",
+          "href": null
+        }
+      ],
+      "is_toggleable": false,
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8045-beda-fc7cd6b18841",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Capture Layer",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Capture Layer",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-804b-b5e0-fe3d367f0a2d",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Vision Layer (OCR/Object Detection)",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Vision Layer (OCR/Object Detection)",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8076-9abd-c730ee902e2e",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Analysis Layer (Rules/Optional ML)",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Analysis Layer (Rules/Optional ML)",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8006-a77a-e285568c948c",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Presentation Layer (Overlay/Audio)",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Presentation Layer (Overlay/Audio)",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-80f0-afe7-d206a42eb576",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Local Storage (Profiles/Logs)",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Local Storage (Profiles/Logs)",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8071-b497-c4624febf90c",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "divider",
+    "divider": {}
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8012-870d-d3420d58a5fa",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "heading_3",
+    "heading_3": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "6. Non-Functional Constraints",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "6. Non-Functional Constraints",
+          "href": null
+        }
+      ],
+      "is_toggleable": false,
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8061-bc94-d71522458030",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Overlay performance impact kept minimal.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Overlay performance impact kept minimal.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-800c-b18f-d1b2d5cd999e",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Resource usage capped by user settings.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Resource usage capped by user settings.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-800c-b69c-cdf5a488ace8",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Offline-first operation.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Offline-first operation.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-801f-8ccc-ce682c124eae",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "No game memory access, input injection, or automation.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "No game memory access, input injection, or automation.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-80c1-85be-e260e986a14b",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "divider",
+    "divider": {}
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-808e-84da-cf8af427451d",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "heading_3",
+    "heading_3": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "7. Security & Compliance",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "7. Security & Compliance",
+          "href": null
+        }
+      ],
+      "is_toggleable": false,
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-801e-a2f4-d4cccdebd1f9",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Read-only operation.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Read-only operation.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-80da-86cf-fd161f76d640",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "User-controlled data retention.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "User-controlled data retention.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8079-a852-fa5372ea0812",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Designed to avoid anti-cheat violations.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Designed to avoid anti-cheat violations.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-804f-be81-c062768248d1",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "divider",
+    "divider": {}
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-80f3-9f26-ccf8bc6591d1",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "heading_3",
+    "heading_3": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "8. Extensibility",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "8. Extensibility",
+          "href": null
+        }
+      ],
+      "is_toggleable": false,
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-809f-aecb-ebe69fc9da12",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Pluggable game profiles.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Pluggable game profiles.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8093-a72a-f6f8787c4447",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Rule/plugin framework for community contributions.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Rule/plugin framework for community contributions.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8009-a7d8-efe67e2058a5",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "divider",
+    "divider": {}
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8012-9d4d-f9d6d542a89c",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "heading_3",
+    "heading_3": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "9. MVP Definition",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "9. MVP Definition",
+          "href": null
+        }
+      ],
+      "is_toggleable": false,
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8026-8da4-d25264994e53",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "One supported game.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "One supported game.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-806d-9e2f-d918479f4996",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "OCR + rules engine.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "OCR + rules engine.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-807e-a509-c027078808d6",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Basic overlay tips and alerts.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Basic overlay tips and alerts.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-809a-af3b-d79413007b2e",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "divider",
+    "divider": {}
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8016-904d-dd5882fb1ee7",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "heading_3",
+    "heading_3": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "10. Out of Scope",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "10. Out of Scope",
+          "href": null
+        }
+      ],
+      "is_toggleable": false,
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8014-b067-fd0d48188b88",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Botting, automation, or exploits.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Botting, automation, or exploits.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-80ef-b7ce-d61844b7977a",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T18:57:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Competitive advantage manipulation.",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Competitive advantage manipulation.",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d209a13-0a34-8055-9232-ee4312a9daf6",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-23T18:57:00.000Z",
+    "last_edited_time": "2025-12-23T23:56:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Cloud-based player profiling",
+            "link": null
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          },
+          "plain_text": "Cloud-based player profiling",
+          "href": null
+        }
+      ],
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "id": "2d409a13-0a34-80dd-8314-cdfe260e0a27",
+    "parent": {
+      "type": "page_id",
+      "page_id": "2d209a13-0a34-80f9-865a-c347f3bef934"
+    },
+    "created_time": "2025-12-25T06:18:00.000Z",
+    "last_edited_time": "2025-12-25T06:18:00.000Z",
+    "created_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "last_edited_by": {
+      "object": "user",
+      "id": "6971b080-2266-4de8-aae5-8f6d1dfaa7c2"
+    },
+    "has_children": false,
+    "archived": false,
+    "in_trash": false,
+    "type": "paragraph",
+    "paragraph": {
+      "rich_text": [],
+      "color": "default"
+    }
+  }
+]

@@ -1,0 +1,40 @@
+# Rust/Cargo
+/target/
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Debug
+*.pdb
+
+# Local configuration
+config.local.toml
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+
+# ONNX models (download separately)
+models/*.onnx
+
+# User data
+data/

@@ -1,0 +1,39 @@
+{
+  "id": "example-game",
+  "name": "Example Game Profile",
+  "executables": ["example.exe", "examplegame.exe"],
+  "version": "1.0.0",
+  "ocr_regions": [
+    {
+      "id": "health",
+      "bounds": [0.01, 0.9, 0.1, 0.05],
+      "content_type": "Number"
+    },
+    {
+      "id": "mana",
+      "bounds": [0.01, 0.95, 0.1, 0.05],
+      "content_type": "Number"
+    }
+  ],
+  "templates": [
+    {
+      "id": "low_health_indicator",
+      "image_path": "templates/low_health.png",
+      "threshold": 0.85
+    }
+  ],
+  "rules": [
+    {
+      "id": "low_health_warning",
+      "name": "Low Health Warning",
+      "enabled": true,
+      "script": "if health < 30 { tip(\"Health low! Consider healing.\", \"high\") }"
+    },
+    {
+      "id": "low_mana_warning",
+      "name": "Low Mana Warning",
+      "enabled": true,
+      "script": "if mana < 20 { tip(\"Mana low! Use potions.\", \"medium\") }"
+    }
+  ]
+}
