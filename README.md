@@ -49,7 +49,7 @@ GamersToolKit is designed to be safe from anti-cheat detection:
 # Install Rust from https://rustup.rs
 
 # Clone and build
-git clone https://github.com/yourusername/gamers-toolkit.git
+git clone https://github.com/cashea/GamersToolKit.git
 cd gamers-toolkit
 cargo build --release
 ```

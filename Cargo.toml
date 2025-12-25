@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Real-time game analysis and assistance overlay - read-only screen parsing"
 license = "MIT"
-repository = "https://github.com/yourusername/gamers-toolkit"
+repository = "https://github.com/cashea/GamersToolKit"
 keywords = ["game", "overlay", "ocr", "analysis"]
 categories = ["games", "multimedia"]
 
