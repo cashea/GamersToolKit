@@ -11,6 +11,8 @@ categories = ["games", "multimedia"]
 [dependencies]
 # GUI & Overlay
 egui = "0.29"
+eframe = "0.29"
+egui_extras = { version = "0.29", features = ["image"] }
 egui_overlay = "0.9"
 
 # Screen Capture (Windows Graphics Capture API)

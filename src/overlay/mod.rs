@@ -9,6 +9,7 @@ use anyhow::Result;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use egui::{Align2, Color32, FontId, RichText, Rounding, Vec2};
 use egui_overlay::{EguiOverlay, egui_window_glfw_passthrough::GlfwBackend, egui_render_three_d::ThreeDBackend};
+use egui_overlay::egui_window_glfw_passthrough::glfw;
 use parking_lot::RwLock;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -32,6 +33,23 @@ pub struct OverlayConfig {
     pub max_tips: usize,
     /// Default tip duration in milliseconds
     pub default_duration_ms: u64,
+    /// Monitor index to display overlay on (0 = primary, None = auto-detect)
+    pub monitor_index: Option<usize>,
+}
+
+/// Information about a connected monitor
+#[derive(Debug, Clone)]
+pub struct MonitorInfo {
+    /// Monitor index (0-based)
+    pub index: usize,
+    /// Monitor name (if available)
+    pub name: Option<String>,
+    /// Position on virtual screen (x, y)
+    pub position: (i32, i32),
+    /// Work area (x, y, width, height) - excludes taskbar
+    pub work_area: (i32, i32, i32, i32),
+    /// Whether this is the primary monitor
+    pub is_primary: bool,
 }
 
 impl Default for OverlayConfig {
@@ -43,6 +61,7 @@ impl Default for OverlayConfig {
             anchor: OverlayAnchor::TopRight,
             max_tips: 5,
             default_duration_ms: 5000,
+            monitor_index: Some(0), // Default to primary monitor
         }
     }
 }
@@ -103,6 +122,54 @@ impl OverlayState {
     }
 }
 
+/// Enumerate all connected monitors
+///
+/// Returns a list of monitor information that can be used to select
+/// which monitor the overlay should appear on.
+///
+/// # Example
+/// ```no_run
+/// use gamers_toolkit::overlay::list_monitors;
+///
+/// let monitors = list_monitors();
+/// for monitor in &monitors {
+///     println!("{}: {} ({}x{} at {},{})",
+///         monitor.index,
+///         monitor.name.as_deref().unwrap_or("Unknown"),
+///         monitor.work_area.2, monitor.work_area.3,
+///         monitor.work_area.0, monitor.work_area.1
+///     );
+/// }
+/// ```
+pub fn list_monitors() -> Vec<MonitorInfo> {
+    let mut glfw_instance = match glfw::init(glfw::fail_on_errors) {
+        Ok(g) => g,
+        Err(e) => {
+            tracing::error!("Failed to initialize GLFW for monitor enumeration: {}", e);
+            return Vec::new();
+        }
+    };
+
+    let mut monitors = Vec::new();
+
+    glfw_instance.with_connected_monitors(|_, connected| {
+        for (index, monitor) in connected.iter().enumerate() {
+            let (x, y, w, h) = monitor.get_workarea();
+            let (px, py) = monitor.get_pos();
+
+            monitors.push(MonitorInfo {
+                index,
+                name: monitor.get_name(),
+                position: (px, py),
+                work_area: (x, y, w, h),
+                is_primary: index == 0, // First monitor is always primary in GLFW
+            });
+        }
+    });
+
+    monitors
+}
+
 /// Overlay window manager
 pub struct OverlayManager {
     state: Arc<RwLock<OverlayState>>,
@@ -141,6 +208,14 @@ impl OverlayManager {
         self.state.write().config = config;
     }
 
+    /// Set the monitor index for the overlay
+    ///
+    /// Note: This must be called before `run()` to take effect.
+    /// Use `list_monitors()` to get available monitor indices.
+    pub fn set_monitor(&self, monitor_index: Option<usize>) {
+        self.state.write().config.monitor_index = monitor_index;
+    }
+
     /// Run the overlay event loop (blocking)
     /// This should be called from the main thread
     pub fn run(&self) -> Result<()> {
@@ -153,6 +228,8 @@ impl OverlayManager {
         let app = OverlayApp {
             state,
             tip_receiver,
+            positioned: false,
+            monitor_bounds: None,
         };
 
         // Run egui_overlay
@@ -166,6 +243,10 @@ impl OverlayManager {
 struct OverlayApp {
     state: Arc<RwLock<OverlayState>>,
     tip_receiver: Receiver<Tip>,
+    /// Whether we've positioned the window on the target monitor
+    positioned: bool,
+    /// Cached monitor bounds for the selected monitor (x, y, width, height)
+    monitor_bounds: Option<(i32, i32, i32, i32)>,
 }
 
 impl EguiOverlay for OverlayApp {
@@ -173,8 +254,55 @@ impl EguiOverlay for OverlayApp {
         &mut self,
         egui_ctx: &egui::Context,
         _default_gfx_backend: &mut ThreeDBackend,
-        _glfw_backend: &mut GlfwBackend,
+        glfw_backend: &mut GlfwBackend,
     ) {
+        // Position window on the selected monitor and enable passthrough (only on first frame)
+        if !self.positioned {
+            self.positioned = true;
+
+            // Enable mouse passthrough so clicks go through to the game
+            glfw_backend.set_passthrough(true);
+            info!("Mouse passthrough enabled");
+
+            let monitor_index = self.state.read().config.monitor_index;
+
+            if let Some(target_index) = monitor_index {
+                // First, collect monitor info from GLFW
+                let monitor_data: Option<(i32, i32, i32, i32, String)> =
+                    glfw_backend.window.glfw.with_connected_monitors(|_, monitors| {
+                        monitors.get(target_index).map(|monitor| {
+                            let (x, y, w, h) = monitor.get_workarea();
+                            let name = monitor.get_name().unwrap_or_else(|| "Unknown".to_string());
+                            (x, y, w, h, name)
+                        })
+                    });
+
+                // Then, apply the positioning outside the closure
+                if let Some((x, y, w, h, name)) = monitor_data {
+                    self.monitor_bounds = Some((x, y, w, h));
+
+                    // Position and size the window to cover the selected monitor
+                    glfw_backend.window.set_pos(x, y);
+                    glfw_backend.window.set_size(w, h);
+
+                    info!(
+                        "Overlay positioned on monitor {}: {} at ({}, {}) size {}x{}",
+                        target_index, name, x, y, w, h
+                    );
+                } else {
+                    // Get monitor count for error message
+                    let count = glfw_backend
+                        .window
+                        .glfw
+                        .with_connected_monitors(|_, m| m.len());
+                    info!(
+                        "Monitor index {} not found, {} monitors available",
+                        target_index, count
+                    );
+                }
+            }
+        }
+
         // Process incoming tips
         while let Ok(tip) = self.tip_receiver.try_recv() {
             let mut state = self.state.write();
