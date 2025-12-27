@@ -8,7 +8,13 @@
       "Bash(git commit:*)",
       "Bash(gh auth:*)",
       "Bash(gh repo create:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(rustc:*)",
+      "Bash(cargo --version:*)",
+      "Bash(cmd /c \"rustc --version && cargo --version\")",
+      "Bash(powershell -Command \"rustc --version; cargo --version\")",
+      "Bash(cargo check:*)",
+      "Bash(cargo test:*)"
     ]
   }
 }

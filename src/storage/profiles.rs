@@ -80,3 +80,192 @@ pub fn save_profile(profile: &GameProfile, path: &Path) -> Result<()> {
     std::fs::write(path, content)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+
+    fn create_test_profile() -> GameProfile {
+        GameProfile {
+            id: "test-game".to_string(),
+            name: "Test Game".to_string(),
+            executables: vec!["testgame.exe".to_string(), "testgame64.exe".to_string()],
+            version: "1.0.0".to_string(),
+            ocr_regions: vec![
+                OcrRegion {
+                    id: "health".to_string(),
+                    bounds: (0.1, 0.9, 0.1, 0.05),
+                    content_type: ContentType::Number,
+                },
+                OcrRegion {
+                    id: "mana".to_string(),
+                    bounds: (0.2, 0.9, 0.1, 0.05),
+                    content_type: ContentType::Percentage,
+                },
+            ],
+            templates: vec![
+                TemplateDefinition {
+                    id: "low_health_icon".to_string(),
+                    image_path: "templates/low_health.png".to_string(),
+                    threshold: 0.8,
+                },
+            ],
+            rules: vec![
+                RuleDefinition {
+                    id: "low_health_warning".to_string(),
+                    name: "Low Health Warning".to_string(),
+                    enabled: true,
+                    script: r#"if health < 20 { alert("Low health!") }"#.to_string(),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn test_profile_serialization_roundtrip() {
+        let profile = create_test_profile();
+
+        // Serialize to JSON
+        let json = serde_json::to_string_pretty(&profile).unwrap();
+
+        // Deserialize back
+        let parsed: GameProfile = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(profile.id, parsed.id);
+        assert_eq!(profile.name, parsed.name);
+        assert_eq!(profile.executables.len(), parsed.executables.len());
+        assert_eq!(profile.ocr_regions.len(), parsed.ocr_regions.len());
+        assert_eq!(profile.templates.len(), parsed.templates.len());
+        assert_eq!(profile.rules.len(), parsed.rules.len());
+    }
+
+    #[test]
+    fn test_save_and_load_profile() {
+        let profile = create_test_profile();
+
+        // Create temp file
+        let temp_file = NamedTempFile::new().unwrap();
+
+        // Save profile
+        save_profile(&profile, temp_file.path()).unwrap();
+
+        // Load profile
+        let loaded = load_profile(temp_file.path()).unwrap();
+
+        assert_eq!(profile.id, loaded.id);
+        assert_eq!(profile.name, loaded.name);
+        assert_eq!(profile.version, loaded.version);
+    }
+
+    #[test]
+    fn test_ocr_region_bounds() {
+        let region = OcrRegion {
+            id: "test".to_string(),
+            bounds: (0.5, 0.5, 0.2, 0.1),
+            content_type: ContentType::Text,
+        };
+
+        assert_eq!(region.bounds.0, 0.5); // x
+        assert_eq!(region.bounds.1, 0.5); // y
+        assert_eq!(region.bounds.2, 0.2); // width
+        assert_eq!(region.bounds.3, 0.1); // height
+    }
+
+    #[test]
+    fn test_content_type_serialization() {
+        let types = vec![
+            ContentType::Text,
+            ContentType::Number,
+            ContentType::Percentage,
+            ContentType::Time,
+        ];
+
+        for content_type in types {
+            let json = serde_json::to_string(&content_type).unwrap();
+            let parsed: ContentType = serde_json::from_str(&json).unwrap();
+
+            // Compare debug representations
+            assert_eq!(format!("{:?}", content_type), format!("{:?}", parsed));
+        }
+    }
+
+    #[test]
+    fn test_template_definition() {
+        let template = TemplateDefinition {
+            id: "test_icon".to_string(),
+            image_path: "icons/test.png".to_string(),
+            threshold: 0.85,
+        };
+
+        let json = serde_json::to_string(&template).unwrap();
+        let parsed: TemplateDefinition = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(template.id, parsed.id);
+        assert_eq!(template.image_path, parsed.image_path);
+        assert!((template.threshold - parsed.threshold).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rule_definition() {
+        let rule = RuleDefinition {
+            id: "test_rule".to_string(),
+            name: "Test Rule".to_string(),
+            enabled: false,
+            script: "print(\"hello\")".to_string(),
+        };
+
+        let json = serde_json::to_string(&rule).unwrap();
+        let parsed: RuleDefinition = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(rule.id, parsed.id);
+        assert_eq!(rule.name, parsed.name);
+        assert_eq!(rule.enabled, parsed.enabled);
+        assert_eq!(rule.script, parsed.script);
+    }
+
+    #[test]
+    fn test_load_profile_file_not_found() {
+        let result = load_profile(Path::new("/nonexistent/profile.json"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_profile_invalid_json() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut temp_file, b"not valid json {{{").unwrap();
+
+        let result = load_profile(temp_file.path());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_profile_clone() {
+        let profile = create_test_profile();
+        let cloned = profile.clone();
+
+        assert_eq!(profile.id, cloned.id);
+        assert_eq!(profile.ocr_regions.len(), cloned.ocr_regions.len());
+    }
+
+    #[test]
+    fn test_empty_profile() {
+        let profile = GameProfile {
+            id: "empty".to_string(),
+            name: "Empty Profile".to_string(),
+            executables: vec![],
+            version: "0.1.0".to_string(),
+            ocr_regions: vec![],
+            templates: vec![],
+            rules: vec![],
+        };
+
+        let json = serde_json::to_string(&profile).unwrap();
+        let parsed: GameProfile = serde_json::from_str(&json).unwrap();
+
+        assert!(parsed.executables.is_empty());
+        assert!(parsed.ocr_regions.is_empty());
+        assert!(parsed.templates.is_empty());
+        assert!(parsed.rules.is_empty());
+    }
+}

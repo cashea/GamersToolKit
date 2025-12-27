@@ -6,9 +6,6 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-use crate::overlay::OverlayConfig;
-use crate::capture::CaptureConfig;
-
 /// Application settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -57,17 +54,23 @@ impl Default for GeneralConfig {
 /// Capture-related settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CaptureSettings {
+    /// Target window title (partial match) or empty for primary monitor
+    pub target_window: Option<String>,
     /// Maximum capture FPS
     pub max_fps: u32,
     /// Capture cursor in frames
     pub capture_cursor: bool,
+    /// Draw border around captured window
+    pub draw_border: bool,
 }
 
 impl Default for CaptureSettings {
     fn default() -> Self {
         Self {
+            target_window: None,
             max_fps: 30,
             capture_cursor: false,
+            draw_border: false,
         }
     }
 }
@@ -129,4 +132,118 @@ pub fn save_config(config: &AppConfig, path: &Path) -> Result<()> {
     let content = toml::to_string_pretty(config)?;
     std::fs::write(path, content)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_default_app_config() {
+        let config = AppConfig::default();
+
+        // Check general defaults
+        assert!(!config.general.start_minimized);
+        assert!(!config.general.auto_start);
+        assert!(config.general.check_updates);
+
+        // Check capture defaults
+        assert!(config.capture.target_window.is_none());
+        assert_eq!(config.capture.max_fps, 30);
+        assert!(!config.capture.capture_cursor);
+        assert!(!config.capture.draw_border);
+
+        // Check overlay defaults
+        assert!(config.overlay.enabled);
+        assert!((config.overlay.opacity - 0.9).abs() < 0.01);
+        assert!(config.overlay.sound_enabled);
+        assert!((config.overlay.sound_volume - 0.7).abs() < 0.01);
+
+        // Check performance defaults
+        assert_eq!(config.performance.max_cpu_percent, 10);
+        assert_eq!(config.performance.max_memory_mb, 512);
+        assert!(config.performance.idle_optimization);
+    }
+
+    #[test]
+    fn test_config_serialization_roundtrip() {
+        let config = AppConfig::default();
+
+        // Serialize to TOML
+        let toml_str = toml::to_string_pretty(&config).unwrap();
+
+        // Deserialize back
+        let parsed: AppConfig = toml::from_str(&toml_str).unwrap();
+
+        // Verify values match
+        assert_eq!(config.general.start_minimized, parsed.general.start_minimized);
+        assert_eq!(config.capture.max_fps, parsed.capture.max_fps);
+        assert_eq!(config.overlay.enabled, parsed.overlay.enabled);
+        assert_eq!(config.performance.max_memory_mb, parsed.performance.max_memory_mb);
+    }
+
+    #[test]
+    fn test_config_with_custom_values() {
+        let mut config = AppConfig::default();
+        config.capture.target_window = Some("My Game".to_string());
+        config.capture.max_fps = 60;
+        config.overlay.opacity = 0.5;
+
+        // Serialize and deserialize
+        let toml_str = toml::to_string_pretty(&config).unwrap();
+        let parsed: AppConfig = toml::from_str(&toml_str).unwrap();
+
+        assert_eq!(parsed.capture.target_window, Some("My Game".to_string()));
+        assert_eq!(parsed.capture.max_fps, 60);
+        assert!((parsed.overlay.opacity - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_save_and_load_config() {
+        let config = AppConfig::default();
+
+        // Create a temporary file
+        let mut temp_file = NamedTempFile::new().unwrap();
+
+        // Save config
+        save_config(&config, temp_file.path()).unwrap();
+
+        // Load config
+        let loaded = load_config(temp_file.path()).unwrap();
+
+        // Verify
+        assert_eq!(config.general.check_updates, loaded.general.check_updates);
+        assert_eq!(config.capture.max_fps, loaded.capture.max_fps);
+    }
+
+    #[test]
+    fn test_load_config_file_not_found() {
+        let result = load_config(Path::new("/nonexistent/path/config.toml"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_config_invalid_toml() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "this is not valid toml {{{{").unwrap();
+
+        let result = load_config(temp_file.path());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_capture_settings_clone() {
+        let settings = CaptureSettings {
+            target_window: Some("Test".to_string()),
+            max_fps: 60,
+            capture_cursor: true,
+            draw_border: true,
+        };
+
+        let cloned = settings.clone();
+        assert_eq!(settings.target_window, cloned.target_window);
+        assert_eq!(settings.max_fps, cloned.max_fps);
+    }
 }
