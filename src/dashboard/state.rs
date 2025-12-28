@@ -76,7 +76,6 @@ pub struct HomeViewState {
 }
 
 /// Capture view state
-#[derive(Debug)]
 pub struct CaptureViewState {
     /// Available windows for capture
     pub available_windows: Vec<String>,
@@ -94,6 +93,27 @@ pub struct CaptureViewState {
     pub preview_enabled: bool,
     /// Last refresh time
     pub last_refresh: Option<Instant>,
+    /// Cached preview texture handle
+    pub preview_texture: Option<egui::TextureHandle>,
+    /// Last preview frame dimensions (to detect size changes)
+    pub preview_frame_size: Option<(u32, u32)>,
+}
+
+impl std::fmt::Debug for CaptureViewState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CaptureViewState")
+            .field("available_windows", &self.available_windows)
+            .field("available_monitors", &self.available_monitors)
+            .field("target_type", &self.target_type)
+            .field("selected_window", &self.selected_window)
+            .field("selected_monitor", &self.selected_monitor)
+            .field("search_query", &self.search_query)
+            .field("preview_enabled", &self.preview_enabled)
+            .field("last_refresh", &self.last_refresh)
+            .field("preview_texture", &self.preview_texture.as_ref().map(|_| "<texture>"))
+            .field("preview_frame_size", &self.preview_frame_size)
+            .finish()
+    }
 }
 
 impl Default for CaptureViewState {
@@ -107,6 +127,8 @@ impl Default for CaptureViewState {
             search_query: String::new(),
             preview_enabled: false,
             last_refresh: None,
+            preview_texture: None,
+            preview_frame_size: None,
         }
     }
 }

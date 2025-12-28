@@ -14,6 +14,7 @@ use crate::dashboard::views::{
     render_capture_view, render_home_view, render_overlay_view,
     render_profiles_view, render_settings_view,
 };
+use crate::hotkey::HotkeyManager;
 use crate::overlay::OverlayManager;
 use crate::shared::SharedAppState;
 use std::thread::JoinHandle;
@@ -36,6 +37,8 @@ pub struct DashboardApp {
     overlay_handle: Option<JoinHandle<()>>,
     /// Last synced overlay config (for change detection)
     last_synced_overlay_config: Option<crate::overlay::OverlayConfig>,
+    /// Global hotkey manager
+    hotkey_manager: Option<HotkeyManager>,
 }
 
 /// Helper for calculating FPS
@@ -58,6 +61,20 @@ impl Default for FrameCounter {
 impl DashboardApp {
     /// Create a new dashboard application
     pub fn new(shared_state: Arc<RwLock<SharedAppState>>) -> Self {
+        // Initialize hotkey manager
+        let hotkey_manager = match HotkeyManager::new(shared_state.clone()) {
+            Ok(mut manager) => {
+                if let Err(e) = manager.register_toggle_hotkey() {
+                    tracing::warn!("Failed to register toggle hotkey: {}", e);
+                }
+                Some(manager)
+            }
+            Err(e) => {
+                tracing::warn!("Failed to create hotkey manager: {}", e);
+                None
+            }
+        };
+
         Self {
             shared_state,
             dashboard_state: DashboardState::default(),
@@ -67,6 +84,7 @@ impl DashboardApp {
             overlay_manager: None,
             overlay_handle: None,
             last_synced_overlay_config: None,
+            hotkey_manager,
         }
     }
 
@@ -227,6 +245,9 @@ impl eframe::App for DashboardApp {
             self.theme_applied = true;
         }
 
+        // Poll for hotkey events
+        self.poll_hotkeys();
+
         // Process commands from UI
         self.process_capture_commands();
         self.process_overlay_commands();
@@ -273,6 +294,7 @@ impl eframe::App for DashboardApp {
                                 ui,
                                 &mut self.dashboard_state.capture,
                                 &self.shared_state,
+                                &self.capture_manager,
                             );
                         }
                         DashboardView::Overlay => {
@@ -413,6 +435,13 @@ impl DashboardApp {
                 let mut state = self.shared_state.write();
                 state.runtime.tips_displayed += 1;
             }
+        }
+    }
+
+    /// Poll for global hotkey events
+    fn poll_hotkeys(&mut self) {
+        if let Some(ref hotkey_manager) = self.hotkey_manager {
+            hotkey_manager.poll_events();
         }
     }
 }

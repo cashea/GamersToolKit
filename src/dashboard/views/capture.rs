@@ -1,7 +1,7 @@
 //! Capture view - Screen capture target selection and preview
 
 use egui::RichText;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -15,6 +15,7 @@ pub fn render_capture_view(
     ui: &mut egui::Ui,
     view_state: &mut CaptureViewState,
     shared_state: &Arc<RwLock<SharedAppState>>,
+    capture_manager: &Arc<Mutex<Option<ScreenCapture>>>,
 ) {
     ui.heading(RichText::new("Screen Capture").size(24.0).strong());
     ui.add_space(8.0);
@@ -86,124 +87,201 @@ pub fn render_capture_view(
     ui.add_space(16.0);
 
     // Content area with list and preview side by side
-    ui.horizontal(|ui| {
-        // Left side: Source list
-        egui::Frame::none()
-            .fill(ThemeColors::BG_MEDIUM)
-            .rounding(egui::Rounding::same(8.0))
-            .inner_margin(12.0)
-            .show(ui, |ui| {
-                ui.set_min_width(300.0);
-                ui.set_max_height(400.0);
+    let available_width = ui.available_width();
+    let use_two_columns = available_width > 700.0;
 
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    if view_state.target_type == 0 {
-                        render_window_list(ui, view_state);
-                    } else {
-                        render_monitor_list(ui, view_state);
-                    }
-                });
+    // Get a frame for preview if capturing and preview is enabled
+    let preview_frame = if view_state.preview_enabled {
+        let capture_guard = capture_manager.lock();
+        if let Some(ref capture) = *capture_guard {
+            capture.try_next_frame()
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    if use_two_columns {
+        ui.columns(2, |columns| {
+            render_source_list_column(&mut columns[0], view_state);
+            render_capture_settings_column(&mut columns[1], view_state, shared_state, preview_frame);
+        });
+    } else {
+        render_source_list_column(ui, view_state);
+        ui.add_space(16.0);
+        render_capture_settings_column(ui, view_state, shared_state, preview_frame);
+    }
+}
+
+/// Render the source list column
+fn render_source_list_column(ui: &mut egui::Ui, view_state: &mut CaptureViewState) {
+    egui::Frame::none()
+        .fill(ThemeColors::BG_MEDIUM)
+        .rounding(egui::Rounding::same(8.0))
+        .inner_margin(12.0)
+        .show(ui, |ui| {
+            ui.set_max_height(400.0);
+
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                if view_state.target_type == 0 {
+                    render_window_list(ui, view_state);
+                } else {
+                    render_monitor_list(ui, view_state);
+                }
+            });
+        });
+}
+
+/// Render the capture settings column
+fn render_capture_settings_column(
+    ui: &mut egui::Ui,
+    view_state: &mut CaptureViewState,
+    shared_state: &Arc<RwLock<SharedAppState>>,
+    preview_frame: Option<crate::capture::frame::CapturedFrame>,
+) {
+    egui::Frame::none()
+        .fill(ThemeColors::BG_MEDIUM)
+        .rounding(egui::Rounding::same(8.0))
+        .inner_margin(16.0)
+        .show(ui, |ui| {
+            ui.heading(RichText::new("Capture Settings").size(16.0));
+            ui.add_space(12.0);
+
+            // Current selection
+            let selection_text = get_current_selection_text(view_state);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Selected:").color(ThemeColors::TEXT_MUTED));
+                ui.label(RichText::new(selection_text).strong());
             });
 
-        ui.add_space(16.0);
+            ui.add_space(12.0);
 
-        // Right side: Preview and controls
-        egui::Frame::none()
-            .fill(ThemeColors::BG_MEDIUM)
-            .rounding(egui::Rounding::same(8.0))
-            .inner_margin(16.0)
-            .show(ui, |ui| {
-                ui.set_min_width(300.0);
+            // Preview toggle
+            ui.checkbox(&mut view_state.preview_enabled, "Enable preview");
 
-                ui.heading(RichText::new("Capture Settings").size(16.0));
-                ui.add_space(12.0);
+            // Preview area (compact)
+            if view_state.preview_enabled {
+                ui.add_space(8.0);
+                egui::Frame::none()
+                    .fill(ThemeColors::BG_DARK)
+                    .rounding(egui::Rounding::same(6.0))
+                    .show(ui, |ui| {
+                        let preview_size = egui::vec2(320.0, 180.0);
+                        ui.set_min_size(preview_size);
 
-                // Current selection
-                let selection_text = get_current_selection_text(view_state);
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Selected:").color(ThemeColors::TEXT_MUTED));
-                    ui.label(RichText::new(selection_text).strong());
-                });
+                        // Update texture if we have a new frame
+                        if let Some(frame) = preview_frame {
+                            let needs_update = view_state.preview_frame_size
+                                .map(|(w, h)| w != frame.width || h != frame.height)
+                                .unwrap_or(true)
+                                || view_state.preview_texture.is_none();
 
-                ui.add_space(16.0);
+                            let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                                [frame.width as usize, frame.height as usize],
+                                &frame.data,
+                            );
 
-                // Preview toggle
-                ui.horizontal(|ui| {
-                    ui.label("Enable preview:");
-                    ui.add_space(8.0);
-                    ui.checkbox(&mut view_state.preview_enabled, "");
-                });
+                            if needs_update {
+                                // Create new texture
+                                let texture = ui.ctx().load_texture(
+                                    "capture_preview",
+                                    color_image,
+                                    egui::TextureOptions::LINEAR,
+                                );
+                                view_state.preview_texture = Some(texture);
+                                view_state.preview_frame_size = Some((frame.width, frame.height));
+                            } else if let Some(ref mut texture) = view_state.preview_texture {
+                                // Update existing texture
+                                texture.set(color_image, egui::TextureOptions::LINEAR);
+                            }
+                        }
 
-                ui.add_space(16.0);
+                        // Render the preview texture or placeholder
+                        if let Some(ref texture) = view_state.preview_texture {
+                            let tex_size = texture.size_vec2();
+                            // Scale to fit preview area while maintaining aspect ratio
+                            let scale = (preview_size.x / tex_size.x).min(preview_size.y / tex_size.y);
+                            let scaled_size = tex_size * scale;
 
-                // Preview area
-                if view_state.preview_enabled {
-                    egui::Frame::none()
-                        .fill(ThemeColors::BG_DARK)
-                        .rounding(egui::Rounding::same(6.0))
-                        .show(ui, |ui| {
-                            ui.set_min_size(egui::vec2(280.0, 160.0));
                             ui.centered_and_justified(|ui| {
+                                ui.image((texture.id(), scaled_size));
+                            });
+                        } else {
+                            ui.centered_and_justified(|ui| {
+                                let is_capturing = shared_state.read().runtime.is_capturing;
+                                let message = if is_capturing {
+                                    "Loading preview..."
+                                } else {
+                                    "Preview not available\n(Capture not running)"
+                                };
                                 ui.label(
-                                    RichText::new("Preview not available\n(Capture not running)")
+                                    RichText::new(message)
+                                        .size(11.0)
                                         .color(ThemeColors::TEXT_MUTED)
                                 );
                             });
-                        });
-                }
-
-                ui.add_space(16.0);
-
-                // Apply button
-                let has_selection = view_state.selected_window.is_some() || view_state.selected_monitor.is_some();
-                ui.add_enabled_ui(has_selection, |ui| {
-                    if ui.add(
-                        egui::Button::new(
-                            RichText::new("Apply Selection")
-                                .color(if has_selection { egui::Color32::WHITE } else { ThemeColors::TEXT_MUTED })
-                        )
-                        .fill(if has_selection { ThemeColors::ACCENT_PRIMARY } else { ThemeColors::BG_LIGHT })
-                        .min_size(egui::vec2(140.0, 36.0))
-                    ).clicked() {
-                        apply_selection(view_state, shared_state);
-                    }
-                });
-
-                ui.add_space(8.0);
-
-                // Start/Stop capture button
-                let is_capturing = shared_state.read().runtime.is_capturing;
-                let capture_btn_text = if is_capturing { "Stop Capture" } else { "Start Capture" };
-                let capture_btn_color = if is_capturing {
-                    ThemeColors::ACCENT_ERROR
-                } else {
-                    ThemeColors::ACCENT_SUCCESS
-                };
-
-                if ui.add(
-                    egui::Button::new(RichText::new(capture_btn_text).color(egui::Color32::WHITE))
-                        .fill(capture_btn_color)
-                        .min_size(egui::vec2(140.0, 36.0))
-                ).clicked() {
-                    let mut state = shared_state.write();
-                    state.runtime.capture_command = Some(if is_capturing {
-                        CaptureCommand::Stop
-                    } else {
-                        CaptureCommand::Start
+                        }
                     });
-                }
+            } else {
+                // Clear texture when preview is disabled to free memory
+                view_state.preview_texture = None;
+                view_state.preview_frame_size = None;
+            }
 
-                // Show current FPS if capturing
-                if is_capturing {
-                    ui.add_space(8.0);
-                    let fps = shared_state.read().runtime.capture_fps;
-                    ui.label(
-                        RichText::new(format!("Capturing at {:.1} FPS", fps))
-                            .color(ThemeColors::ACCENT_SUCCESS)
-                    );
+            ui.add_space(16.0);
+            ui.separator();
+            ui.add_space(12.0);
+
+            // Start/Stop capture button (moved up for visibility)
+            let is_capturing = shared_state.read().runtime.is_capturing;
+            let capture_btn_text = if is_capturing { "Stop Capture" } else { "Start Capture" };
+            let capture_btn_color = if is_capturing {
+                ThemeColors::ACCENT_ERROR
+            } else {
+                ThemeColors::ACCENT_SUCCESS
+            };
+
+            if ui.add(
+                egui::Button::new(RichText::new(capture_btn_text).color(egui::Color32::WHITE))
+                    .fill(capture_btn_color)
+                    .min_size(egui::vec2(140.0, 32.0))
+            ).clicked() {
+                let mut state = shared_state.write();
+                state.runtime.capture_command = Some(if is_capturing {
+                    CaptureCommand::Stop
+                } else {
+                    CaptureCommand::Start
+                });
+            }
+
+            // Show current FPS if capturing
+            if is_capturing {
+                ui.add_space(4.0);
+                let fps = shared_state.read().runtime.capture_fps;
+                ui.label(
+                    RichText::new(format!("Capturing at {:.1} FPS", fps))
+                        .color(ThemeColors::ACCENT_SUCCESS)
+                );
+            }
+
+            ui.add_space(8.0);
+
+            // Apply button
+            let has_selection = view_state.selected_window.is_some() || view_state.selected_monitor.is_some();
+            ui.add_enabled_ui(has_selection, |ui| {
+                if ui.add(
+                    egui::Button::new(
+                        RichText::new("Apply Selection")
+                            .color(if has_selection { egui::Color32::WHITE } else { ThemeColors::TEXT_MUTED })
+                    )
+                    .fill(if has_selection { ThemeColors::ACCENT_PRIMARY } else { ThemeColors::BG_LIGHT })
+                    .min_size(egui::vec2(140.0, 32.0))
+                ).clicked() {
+                    apply_selection(view_state, shared_state);
                 }
             });
-    });
+        });
 }
 
 /// Refresh available capture sources
