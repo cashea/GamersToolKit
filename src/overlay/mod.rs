@@ -19,7 +19,7 @@ use crate::analysis::Tip;
 use crate::overlay::widgets::{PriorityStyles, TipStyle};
 
 /// Overlay configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OverlayConfig {
     /// Overlay opacity (0.0 - 1.0)
     pub opacity: f32,
@@ -35,6 +35,10 @@ pub struct OverlayConfig {
     pub default_duration_ms: u64,
     /// Monitor index to display overlay on (0 = primary, None = auto-detect)
     pub monitor_index: Option<usize>,
+    /// Whether clicks pass through the overlay to the game beneath
+    pub click_through: bool,
+    /// Maximum width for tip display in pixels
+    pub max_width: f32,
 }
 
 /// Information about a connected monitor
@@ -62,6 +66,8 @@ impl Default for OverlayConfig {
             max_tips: 5,
             default_duration_ms: 5000,
             monitor_index: Some(0), // Default to primary monitor
+            click_through: true,    // Allow clicks to pass through by default
+            max_width: 350.0,       // Default tip width in pixels
         }
     }
 }
@@ -216,6 +222,23 @@ impl OverlayManager {
         self.state.write().config.monitor_index = monitor_index;
     }
 
+    /// Set whether clicks pass through the overlay to the game beneath
+    ///
+    /// When enabled (default), mouse clicks go through to the game.
+    /// When disabled, the overlay window captures mouse input (useful for repositioning).
+    pub fn set_click_through(&self, enabled: bool) {
+        self.state.write().config.click_through = enabled;
+    }
+
+    /// Toggle click-through mode
+    ///
+    /// Returns the new state (true = click-through enabled)
+    pub fn toggle_click_through(&self) -> bool {
+        let mut state = self.state.write();
+        state.config.click_through = !state.config.click_through;
+        state.config.click_through
+    }
+
     /// Run the overlay event loop (blocking)
     /// This should be called from the main thread
     pub fn run(&self) -> Result<()> {
@@ -223,6 +246,7 @@ impl OverlayManager {
 
         let state = self.state.clone();
         let tip_receiver = self.tip_receiver.clone();
+        let config = self.state.read().config.clone();
 
         // Create the overlay app
         let app = OverlayApp {
@@ -230,6 +254,8 @@ impl OverlayManager {
             tip_receiver,
             positioned: false,
             monitor_bounds: None,
+            current_click_through: config.click_through,
+            current_monitor_index: config.monitor_index,
         };
 
         // Run egui_overlay
@@ -247,6 +273,10 @@ struct OverlayApp {
     positioned: bool,
     /// Cached monitor bounds for the selected monitor (x, y, width, height)
     monitor_bounds: Option<(i32, i32, i32, i32)>,
+    /// Current click-through state (tracked for runtime changes)
+    current_click_through: bool,
+    /// Current monitor index (tracked for runtime changes)
+    current_monitor_index: Option<usize>,
 }
 
 impl EguiOverlay for OverlayApp {
@@ -256,17 +286,36 @@ impl EguiOverlay for OverlayApp {
         _default_gfx_backend: &mut ThreeDBackend,
         glfw_backend: &mut GlfwBackend,
     ) {
-        // Position window on the selected monitor and enable passthrough (only on first frame)
-        if !self.positioned {
+        // Check if click-through setting changed at runtime
+        let desired_click_through = self.state.read().config.click_through;
+        if desired_click_through != self.current_click_through {
+            glfw_backend.set_passthrough(desired_click_through);
+            self.current_click_through = desired_click_through;
+            info!(
+                "Click-through {}",
+                if desired_click_through { "enabled" } else { "disabled" }
+            );
+        }
+
+        // Check if monitor index changed at runtime
+        let desired_monitor_index = self.state.read().config.monitor_index;
+        let monitor_changed = desired_monitor_index != self.current_monitor_index;
+
+        // Position window on the selected monitor (on first frame or when monitor changes)
+        if !self.positioned || monitor_changed {
+            if !self.positioned {
+                // Set initial mouse passthrough based on config
+                glfw_backend.set_passthrough(self.current_click_through);
+                info!(
+                    "Initial click-through: {}",
+                    if self.current_click_through { "enabled" } else { "disabled" }
+                );
+            }
+
             self.positioned = true;
+            self.current_monitor_index = desired_monitor_index;
 
-            // Enable mouse passthrough so clicks go through to the game
-            glfw_backend.set_passthrough(true);
-            info!("Mouse passthrough enabled");
-
-            let monitor_index = self.state.read().config.monitor_index;
-
-            if let Some(target_index) = monitor_index {
+            if let Some(target_index) = desired_monitor_index {
                 // First, collect monitor info from GLFW
                 let monitor_data: Option<(i32, i32, i32, i32, String)> =
                     glfw_backend.window.glfw.with_connected_monitors(|_, monitors| {
@@ -344,6 +393,8 @@ impl EguiOverlay for OverlayApp {
             state.config.offset.1 as f32,
         );
 
+        let max_width = state.config.max_width;
+
         // Draw tips window
         egui::Area::new(egui::Id::new("tips_overlay"))
             .anchor(anchor, offset)
@@ -351,7 +402,7 @@ impl EguiOverlay for OverlayApp {
                 egui::Frame::none()
                     .fill(Color32::TRANSPARENT)
                     .show(ui, |ui| {
-                        ui.set_max_width(350.0);
+                        ui.set_max_width(max_width);
 
                         for display_tip in state.tips.iter() {
                             let style = get_style_for_priority(display_tip.tip.priority, &state.styles);

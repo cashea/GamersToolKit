@@ -114,6 +114,18 @@ pub fn render_overlay_view(
 
                         ui.add_space(8.0);
 
+                        // Max width slider
+                        ui.horizontal(|ui| {
+                            ui.label("Tip width:");
+                            ui.add_space(8.0);
+                            let mut max_width = state.overlay_config.max_width;
+                            if ui.add(egui::Slider::new(&mut max_width, 200.0..=600.0).suffix(" px")).changed() {
+                                state.overlay_config.max_width = max_width;
+                            }
+                        });
+
+                        ui.add_space(8.0);
+
                         // Max tips slider
                         ui.horizontal(|ui| {
                             ui.label("Max tips shown:");

@@ -34,6 +34,8 @@ pub struct DashboardApp {
     overlay_manager: Option<Arc<OverlayManager>>,
     /// Overlay thread handle
     overlay_handle: Option<JoinHandle<()>>,
+    /// Last synced overlay config (for change detection)
+    last_synced_overlay_config: Option<crate::overlay::OverlayConfig>,
 }
 
 /// Helper for calculating FPS
@@ -64,6 +66,7 @@ impl DashboardApp {
             frame_counter: FrameCounter::default(),
             overlay_manager: None,
             overlay_handle: None,
+            last_synced_overlay_config: None,
         }
     }
 
@@ -229,6 +232,9 @@ impl eframe::App for DashboardApp {
         self.process_overlay_commands();
         self.process_test_tip();
 
+        // Sync overlay config changes to running overlay
+        self.sync_overlay_config();
+
         // Update capture statistics if capturing
         self.update_capture_stats();
 
@@ -359,6 +365,24 @@ impl DashboardApp {
             let mut state = self.shared_state.write();
             state.runtime.is_overlay_running = false;
             state.runtime.overlay_visible = false;
+        }
+    }
+
+    /// Sync overlay config from shared state to the running overlay (only when changed)
+    fn sync_overlay_config(&mut self) {
+        if let Some(manager) = &self.overlay_manager {
+            let config = self.shared_state.read().overlay_config.clone();
+
+            // Only sync if config has changed
+            let should_sync = match &self.last_synced_overlay_config {
+                Some(last) => last != &config,
+                None => true,
+            };
+
+            if should_sync {
+                manager.set_config(config.clone());
+                self.last_synced_overlay_config = Some(config);
+            }
         }
     }
 
