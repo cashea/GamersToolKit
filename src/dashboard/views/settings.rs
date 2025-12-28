@@ -284,34 +284,8 @@ pub fn render_settings_view(
 
         ui.add_space(24.0);
 
-        // Save/Reset buttons
+        // Reset button and auto-save indicator
         ui.horizontal(|ui| {
-            let save_enabled = view_state.has_unsaved_changes;
-
-            ui.add_enabled_ui(save_enabled, |ui| {
-                if ui.add(
-                    egui::Button::new(
-                        RichText::new("Save Changes")
-                            .color(if save_enabled { egui::Color32::WHITE } else { ThemeColors::TEXT_MUTED })
-                    )
-                    .fill(if save_enabled { ThemeColors::ACCENT_SUCCESS } else { ThemeColors::BG_LIGHT })
-                    .min_size(egui::vec2(120.0, 36.0))
-                ).clicked() {
-                    // Save configuration
-                    if let Ok(config_dir) = crate::storage::get_config_dir() {
-                        let config_path = config_dir.join("config.toml");
-                        let state = shared_state.read();
-                        if let Err(e) = crate::config::save_config(&state.config, &config_path) {
-                            tracing::error!("Failed to save config: {}", e);
-                        } else {
-                            view_state.has_unsaved_changes = false;
-                        }
-                    }
-                }
-            });
-
-            ui.add_space(12.0);
-
             if ui.add(
                 egui::Button::new("Reset to Defaults")
                     .min_size(egui::vec2(120.0, 36.0))
@@ -320,12 +294,21 @@ pub fn render_settings_view(
                 state.config = crate::config::AppConfig::default();
                 state.overlay_config.opacity = state.config.overlay.opacity;
                 state.overlay_config.enabled = state.config.overlay.enabled;
-                view_state.has_unsaved_changes = true;
+                changed.set(true);
             }
+
+            ui.add_space(16.0);
+
+            // Auto-save indicator
+            ui.label(
+                RichText::new("Settings are saved automatically")
+                    .size(12.0)
+                    .color(ThemeColors::TEXT_MUTED)
+            );
         });
     });
 
-    // Apply changes
+    // Apply changes - triggers auto-save in the dashboard app
     if changed.get() {
         view_state.has_unsaved_changes = true;
     }

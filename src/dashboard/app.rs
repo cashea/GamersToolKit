@@ -2,11 +2,13 @@
 
 use eframe::egui;
 use parking_lot::{Mutex, RwLock};
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::analysis::Tip;
 use crate::capture::{CaptureTarget, ScreenCapture};
+use crate::config::WindowState;
 use crate::dashboard::components::render_sidebar;
 use crate::dashboard::state::{DashboardState, DashboardView};
 use crate::dashboard::theme;
@@ -39,6 +41,16 @@ pub struct DashboardApp {
     last_synced_overlay_config: Option<crate::overlay::OverlayConfig>,
     /// Global hotkey manager
     hotkey_manager: Option<HotkeyManager>,
+    /// Config directory path for saving
+    config_dir: Option<PathBuf>,
+    /// Last time config was auto-saved
+    last_auto_save: Instant,
+    /// Whether there are pending changes to save
+    pending_save: bool,
+    /// Last saved window state (for change detection)
+    last_window_state: Option<WindowState>,
+    /// Last time window state was saved
+    last_window_save: Instant,
 }
 
 /// Helper for calculating FPS
@@ -75,6 +87,9 @@ impl DashboardApp {
             }
         };
 
+        // Get config directory for saving
+        let config_dir = crate::storage::get_config_dir().ok();
+
         Self {
             shared_state,
             dashboard_state: DashboardState::default(),
@@ -85,6 +100,11 @@ impl DashboardApp {
             overlay_handle: None,
             last_synced_overlay_config: None,
             hotkey_manager,
+            config_dir,
+            last_auto_save: Instant::now(),
+            pending_save: false,
+            last_window_state: None,
+            last_window_save: Instant::now(),
         }
     }
 
@@ -227,12 +247,113 @@ impl DashboardApp {
 
     /// Create eframe options for the dashboard window
     pub fn options() -> eframe::NativeOptions {
+        // Try to load saved window state
+        let window_state = crate::storage::get_config_dir()
+            .ok()
+            .and_then(|dir| crate::config::load_window_state(&dir.join("window_state.toml")));
+
+        let mut viewport = egui::ViewportBuilder::default()
+            .with_min_inner_size([800.0, 500.0])
+            .with_title("GamersToolKit Dashboard");
+
+        // Apply saved window state or defaults
+        if let Some(state) = window_state {
+            if let Some((w, h)) = state.size {
+                viewport = viewport.with_inner_size([w, h]);
+            } else {
+                viewport = viewport.with_inner_size([1100.0, 700.0]);
+            }
+            if let Some((x, y)) = state.position {
+                viewport = viewport.with_position([x as f32, y as f32]);
+            }
+            if state.maximized {
+                viewport = viewport.with_maximized(true);
+            }
+            tracing::info!("Restored window state from previous session");
+        } else {
+            viewport = viewport.with_inner_size([1100.0, 700.0]);
+        }
+
         eframe::NativeOptions {
-            viewport: egui::ViewportBuilder::default()
-                .with_inner_size([1100.0, 700.0])
-                .with_min_inner_size([800.0, 500.0])
-                .with_title("GamersToolKit Dashboard"),
+            viewport,
             ..Default::default()
+        }
+    }
+
+    /// Mark that settings have changed and need to be saved
+    pub fn mark_settings_changed(&mut self) {
+        self.pending_save = true;
+    }
+
+    /// Auto-save settings if there are pending changes (debounced)
+    fn auto_save_settings(&mut self) {
+        const AUTO_SAVE_DELAY: Duration = Duration::from_secs(2);
+
+        if !self.pending_save {
+            return;
+        }
+
+        // Only save if enough time has passed since last change
+        if self.last_auto_save.elapsed() < AUTO_SAVE_DELAY {
+            return;
+        }
+
+        if let Some(ref config_dir) = self.config_dir {
+            let config_path = config_dir.join("config.toml");
+            let state = self.shared_state.read();
+            if let Err(e) = crate::config::save_config(&state.config, &config_path) {
+                tracing::error!("Failed to auto-save config: {}", e);
+            } else {
+                tracing::debug!("Auto-saved configuration");
+                self.pending_save = false;
+                self.last_auto_save = Instant::now();
+            }
+        }
+    }
+
+    /// Save window state periodically (debounced, only when changed)
+    fn save_window_state(&mut self, ctx: &egui::Context) {
+        const WINDOW_SAVE_INTERVAL: Duration = Duration::from_secs(5);
+
+        // Only check periodically
+        if self.last_window_save.elapsed() < WINDOW_SAVE_INTERVAL {
+            return;
+        }
+
+        self.last_window_save = Instant::now();
+
+        // Get current window state from egui - extract values inside the closure
+        let (outer_rect, maximized) = ctx.input(|i| {
+            let vp = i.viewport();
+            (vp.outer_rect, vp.maximized.unwrap_or(false))
+        });
+
+        let current_state = WindowState {
+            position: outer_rect.map(|r| (r.left() as i32, r.top() as i32)),
+            size: outer_rect.map(|r| (r.width(), r.height())),
+            maximized,
+        };
+
+        // Only save if state changed
+        let should_save = match &self.last_window_state {
+            Some(last) => {
+                last.position != current_state.position
+                    || last.size != current_state.size
+                    || last.maximized != current_state.maximized
+            }
+            None => true,
+        };
+
+        if should_save {
+            if let Some(ref config_dir) = self.config_dir {
+                let state_path = config_dir.join("window_state.toml");
+                if let Err(e) = crate::config::save_window_state(&current_state, &state_path) {
+                    tracing::error!("Failed to save window state: {}", e);
+                } else {
+                    tracing::debug!("Saved window state");
+                    self.last_window_state = Some(current_state);
+                }
+            }
         }
     }
 }
@@ -262,8 +383,20 @@ impl eframe::App for DashboardApp {
         // Check if overlay thread has stopped
         self.check_overlay_status();
 
+        // Auto-save settings if needed
+        self.auto_save_settings();
+
+        // Save window state periodically
+        self.save_window_state(ctx);
+
+        // Check if settings view has unsaved changes and mark for auto-save
+        if self.dashboard_state.settings.has_unsaved_changes {
+            self.pending_save = true;
+            self.dashboard_state.settings.has_unsaved_changes = false;
+        }
+
         // Request continuous repaint when capturing to update FPS display
-        if self.is_capturing() {
+        if self.is_capturing() || self.pending_save {
             ctx.request_repaint();
         }
 
@@ -321,6 +454,25 @@ impl eframe::App for DashboardApp {
                     }
                 });
         });
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        // Save any pending config changes
+        if self.pending_save {
+            if let Some(ref config_dir) = self.config_dir {
+                let config_path = config_dir.join("config.toml");
+                let state = self.shared_state.read();
+                if let Err(e) = crate::config::save_config(&state.config, &config_path) {
+                    tracing::error!("Failed to save config on exit: {}", e);
+                } else {
+                    tracing::info!("Saved configuration on exit");
+                }
+            }
+        }
+
+        // Note: Window state is saved via the run_dashboard function
+        // since we need access to the context there
+        tracing::info!("Dashboard shutting down");
     }
 }
 

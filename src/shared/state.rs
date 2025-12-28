@@ -38,10 +38,25 @@ impl Default for SharedAppState {
 impl SharedAppState {
     /// Create a new shared state with the given configuration
     pub fn new(config: AppConfig) -> Self {
+        // Convert config anchor to overlay anchor
+        let anchor = match config.overlay.anchor {
+            crate::config::OverlayAnchor::TopLeft => crate::overlay::OverlayAnchor::TopLeft,
+            crate::config::OverlayAnchor::TopRight => crate::overlay::OverlayAnchor::TopRight,
+            crate::config::OverlayAnchor::BottomLeft => crate::overlay::OverlayAnchor::BottomLeft,
+            crate::config::OverlayAnchor::BottomRight => crate::overlay::OverlayAnchor::BottomRight,
+        };
+
         let overlay_config = OverlayConfig {
             opacity: config.overlay.opacity,
             enabled: config.overlay.enabled,
-            ..Default::default()
+            offset: config.overlay.offset,
+            anchor,
+            max_tips: config.overlay.max_tips,
+            default_duration_ms: config.overlay.default_duration_ms,
+            max_width: config.overlay.max_width,
+            monitor_index: config.overlay.monitor_index,
+            click_through: config.overlay.click_through,
+            visible: true,
         };
 
         let capture_config = CaptureConfig {

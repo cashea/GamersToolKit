@@ -4,7 +4,7 @@
 
 ---
 
-## Phase 1: Foundation 🟡
+## Phase 1: Foundation 🟢
 
 ### Capture Layer 🟢
 - [x] Windows Graphics Capture API integration
@@ -14,20 +14,20 @@
 - [x] BGRA frame buffer capture
 - [x] Non-blocking frame delivery via channels
 
-### Overlay Layer 🟡
+### Overlay Layer 🟢
 - [x] Basic egui overlay window
 - [x] Multi-monitor support
 - [x] Always-on-top positioning
 - [x] Click-through transparency
 - [x] Overlay positioning/sizing controls
-- [ ] Hotkey to toggle visibility
+- [x] Hotkey to toggle visibility
 
-### Dashboard 🟡
+### Dashboard 🟢
 - [x] Basic dashboard window with sidebar
 - [x] Navigation between views
 - [x] Theme system (dark/light)
-- [ ] Settings persistence
-- [ ] Window state restoration
+- [x] Settings persistence (auto-save with 2s debounce)
+- [x] Window state restoration (position, size, maximized)
 
 ---
 

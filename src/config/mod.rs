@@ -86,6 +86,60 @@ pub struct OverlaySettings {
     pub sound_enabled: bool,
     /// Sound volume (0.0 - 1.0)
     pub sound_volume: f32,
+    /// Hotkey to toggle overlay visibility (e.g., "F9", "Ctrl+Shift+O")
+    pub toggle_hotkey: Option<String>,
+    /// Position offset from anchor corner (x, y)
+    #[serde(default = "default_overlay_offset")]
+    pub offset: (i32, i32),
+    /// Anchor corner for overlay positioning
+    #[serde(default)]
+    pub anchor: OverlayAnchor,
+    /// Maximum number of tips to display at once
+    #[serde(default = "default_max_tips")]
+    pub max_tips: usize,
+    /// Default tip duration in milliseconds
+    #[serde(default = "default_tip_duration")]
+    pub default_duration_ms: u64,
+    /// Maximum width for tip display in pixels
+    #[serde(default = "default_max_width")]
+    pub max_width: f32,
+    /// Monitor index for overlay (0 = primary)
+    #[serde(default)]
+    pub monitor_index: Option<usize>,
+    /// Whether clicks pass through the overlay
+    #[serde(default = "default_click_through")]
+    pub click_through: bool,
+}
+
+/// Anchor corner for overlay positioning
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OverlayAnchor {
+    TopLeft,
+    #[default]
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+fn default_overlay_offset() -> (i32, i32) {
+    (20, 20)
+}
+
+fn default_max_tips() -> usize {
+    5
+}
+
+fn default_tip_duration() -> u64 {
+    5000
+}
+
+fn default_max_width() -> f32 {
+    350.0
+}
+
+fn default_click_through() -> bool {
+    true
 }
 
 impl Default for OverlaySettings {
@@ -95,8 +149,41 @@ impl Default for OverlaySettings {
             opacity: 0.9,
             sound_enabled: true,
             sound_volume: 0.7,
+            toggle_hotkey: Some("F9".to_string()),
+            offset: default_overlay_offset(),
+            anchor: OverlayAnchor::default(),
+            max_tips: default_max_tips(),
+            default_duration_ms: default_tip_duration(),
+            max_width: default_max_width(),
+            monitor_index: Some(0),
+            click_through: default_click_through(),
         }
     }
+}
+
+/// Window state for persistence
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WindowState {
+    /// Window position (x, y)
+    pub position: Option<(i32, i32)>,
+    /// Window size (width, height)
+    pub size: Option<(f32, f32)>,
+    /// Whether window is maximized
+    pub maximized: bool,
+}
+
+/// Load window state from file
+pub fn load_window_state(path: &std::path::Path) -> Option<WindowState> {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|content| toml::from_str(&content).ok())
+}
+
+/// Save window state to file
+pub fn save_window_state(state: &WindowState, path: &std::path::Path) -> Result<()> {
+    let content = toml::to_string_pretty(state)?;
+    std::fs::write(path, content)?;
+    Ok(())
 }
 
 /// Performance-related settings
