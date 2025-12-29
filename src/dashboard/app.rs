@@ -14,11 +14,13 @@ use crate::dashboard::state::{DashboardState, DashboardView};
 use crate::dashboard::theme;
 use crate::dashboard::views::{
     render_capture_view, render_home_view, render_overlay_view,
-    render_profiles_view, render_settings_view,
+    render_profiles_view, render_settings_view, render_vision_view,
 };
 use crate::hotkey::HotkeyManager;
 use crate::overlay::OverlayManager;
 use crate::shared::SharedAppState;
+use crate::vision::{VisionPipeline, ModelManager, ModelType};
+use crate::dashboard::state::OcrResultDisplay;
 use std::thread::JoinHandle;
 
 /// The main dashboard application
@@ -51,6 +53,10 @@ pub struct DashboardApp {
     last_window_state: Option<WindowState>,
     /// Last time window state was saved
     last_window_save: Instant,
+    /// Vision pipeline for OCR
+    vision_pipeline: Option<VisionPipeline>,
+    /// Model manager for downloading OCR models
+    model_manager: Option<ModelManager>,
 }
 
 /// Helper for calculating FPS
@@ -90,6 +96,9 @@ impl DashboardApp {
         // Get config directory for saving
         let config_dir = crate::storage::get_config_dir().ok();
 
+        // Initialize model manager
+        let model_manager = ModelManager::new().ok();
+
         Self {
             shared_state,
             dashboard_state: DashboardState::default(),
@@ -105,6 +114,8 @@ impl DashboardApp {
             pending_save: false,
             last_window_state: None,
             last_window_save: Instant::now(),
+            vision_pipeline: None,
+            model_manager,
         }
     }
 
@@ -373,6 +384,7 @@ impl eframe::App for DashboardApp {
         self.process_capture_commands();
         self.process_overlay_commands();
         self.process_test_tip();
+        self.process_vision_commands();
 
         // Sync overlay config changes to running overlay
         self.sync_overlay_config();
@@ -435,6 +447,14 @@ impl eframe::App for DashboardApp {
                                 ui,
                                 &mut self.dashboard_state.overlay,
                                 &self.shared_state,
+                            );
+                        }
+                        DashboardView::Vision => {
+                            render_vision_view(
+                                ui,
+                                &mut self.dashboard_state.vision,
+                                &self.shared_state,
+                                &self.capture_manager,
                             );
                         }
                         DashboardView::Profiles => {
@@ -594,6 +614,159 @@ impl DashboardApp {
     fn poll_hotkeys(&mut self) {
         if let Some(ref hotkey_manager) = self.hotkey_manager {
             hotkey_manager.poll_events();
+        }
+    }
+
+    /// Process vision/OCR commands from the UI
+    fn process_vision_commands(&mut self) {
+        use crate::vision::OcrBackend;
+
+        let vision_state = &mut self.dashboard_state.vision;
+
+        // Update model status from model manager (for PaddleOCR)
+        if let Some(ref manager) = self.model_manager {
+            vision_state.detection_model_ready = manager.is_model_available(ModelType::Detection);
+            vision_state.recognition_model_ready = manager.is_model_available(ModelType::Recognition);
+            vision_state.models_ready = manager.are_models_ready();
+        }
+
+        // Update OCR initialized status based on backend
+        if let Some(ref pipeline) = self.vision_pipeline {
+            vision_state.ocr_initialized = pipeline.is_ocr_ready() && pipeline.backend() == OcrBackend::PaddleOcr;
+            vision_state.windows_ocr_initialized = pipeline.is_ocr_ready() && pipeline.backend() == OcrBackend::WindowsOcr;
+        } else {
+            vision_state.ocr_initialized = false;
+            vision_state.windows_ocr_initialized = false;
+        }
+
+        // Handle model download request (PaddleOCR only)
+        if vision_state.pending_download {
+            vision_state.pending_download = false;
+            vision_state.is_downloading = true;
+            vision_state.last_error = None;
+
+            if let Some(ref manager) = self.model_manager {
+                // Download models (blocking for now - could be made async)
+                match manager.ensure_all_models() {
+                    Ok(()) => {
+                        vision_state.is_downloading = false;
+                        vision_state.download_progress = 1.0;
+                        tracing::info!("OCR models downloaded successfully");
+                    }
+                    Err(e) => {
+                        vision_state.is_downloading = false;
+                        vision_state.last_error = Some(format!("Download failed: {}", e));
+                        tracing::error!("Failed to download OCR models: {}", e);
+                    }
+                }
+            } else {
+                vision_state.is_downloading = false;
+                vision_state.last_error = Some("Model manager not initialized".to_string());
+            }
+        }
+
+        // Handle OCR initialization request - based on selected backend
+        if vision_state.pending_init {
+            vision_state.pending_init = false;
+            vision_state.last_error = None;
+
+            let selected_backend = vision_state.selected_backend;
+
+            // Create or update pipeline with selected backend
+            let mut pipeline = match self.vision_pipeline.take() {
+                Some(p) => p,
+                None => match VisionPipeline::new() {
+                    Ok(p) => p,
+                    Err(e) => {
+                        vision_state.last_error = Some(format!("Pipeline creation failed: {}", e));
+                        tracing::error!("Failed to create vision pipeline: {}", e);
+                        return;
+                    }
+                }
+            };
+
+            // Set the backend
+            pipeline.set_backend(selected_backend);
+
+            // Initialize the selected backend
+            if let Err(e) = pipeline.init_ocr() {
+                vision_state.last_error = Some(format!("OCR init failed: {}", e));
+                tracing::error!("Failed to initialize {:?} OCR: {}", selected_backend, e);
+            } else {
+                match selected_backend {
+                    OcrBackend::WindowsOcr => {
+                        vision_state.windows_ocr_initialized = true;
+                        tracing::info!("Windows OCR engine initialized successfully");
+                    }
+                    OcrBackend::PaddleOcr => {
+                        vision_state.ocr_initialized = true;
+                        tracing::info!("PaddleOCR engine initialized successfully");
+                    }
+                }
+            }
+
+            self.vision_pipeline = Some(pipeline);
+        }
+
+        // Handle OCR run request (manual or auto)
+        let backend_ready = match vision_state.selected_backend {
+            OcrBackend::WindowsOcr => vision_state.windows_ocr_initialized,
+            OcrBackend::PaddleOcr => vision_state.ocr_initialized,
+        };
+        let should_run_ocr = vision_state.pending_ocr_run
+            || (vision_state.auto_run_ocr && vision_state.last_frame_data.is_some());
+
+        if should_run_ocr && backend_ready && self.vision_pipeline.is_some() && !vision_state.is_processing {
+            vision_state.pending_ocr_run = false;
+
+            if let Some(ref frame_data) = vision_state.last_frame_data.clone() {
+                let width = vision_state.last_frame_width;
+                let height = vision_state.last_frame_height;
+
+                if width > 0 && height > 0 {
+                    vision_state.is_processing = true;
+                    let start = Instant::now();
+
+                    if let Some(ref mut pipeline) = self.vision_pipeline {
+                        // Ensure pipeline is using the selected backend
+                        pipeline.set_backend(vision_state.selected_backend);
+
+                        // Create a CapturedFrame for processing
+                        let frame = crate::capture::frame::CapturedFrame::new(
+                            frame_data.clone(),
+                            width,
+                            height,
+                        );
+
+                        match pipeline.process(&frame) {
+                            Ok(result) => {
+                                // Convert results to display format
+                                vision_state.last_ocr_results = result.text_regions
+                                    .into_iter()
+                                    .map(|r| OcrResultDisplay {
+                                        text: r.text,
+                                        bounds: r.bounds,
+                                        confidence: r.confidence,
+                                    })
+                                    .collect();
+                                vision_state.last_processing_time_ms = start.elapsed().as_millis() as u64;
+                                vision_state.last_error = None;
+                            }
+                            Err(e) => {
+                                vision_state.last_error = Some(format!("OCR failed: {}", e));
+                                tracing::error!("OCR processing failed: {}", e);
+                            }
+                        }
+                    }
+
+                    vision_state.is_processing = false;
+                }
+            }
+        }
+
+        // Clear frame data after auto-run to prevent repeated processing
+        if vision_state.auto_run_ocr && !vision_state.is_processing {
+            vision_state.last_frame_data = None;
         }
     }
 }

@@ -18,6 +18,16 @@ egui_overlay = "0.9"
 # Screen Capture (Windows Graphics Capture API)
 windows-capture = "1.4"
 
+# Windows OCR API
+windows = { version = "0.58", features = [
+    "Media_Ocr",
+    "Graphics_Imaging",
+    "Storage_Streams",
+    "Foundation",
+    "Foundation_Collections",
+    "Globalization",
+] }
+
 # ML/OCR (ONNX Runtime for PaddleOCR models)
 ort = "2.0.0-rc.10"
 ndarray = "0.16"
@@ -35,6 +45,11 @@ rodio = "0.19"
 
 # Async runtime
 tokio = { version = "1.41", features = ["full"] }
+
+# HTTP client for model downloads
+reqwest = { version = "0.12", features = ["stream"] }
+futures-util = "0.3"
+sha2 = "0.10"
 
 # Image processing
 image = "0.25"
@@ -59,8 +74,14 @@ crossbeam-channel = "0.5"
 # CLI
 clap = { version = "4.5", features = ["derive"] }
 
+# Global hotkeys
+global-hotkey = "0.6"
+
 [dev-dependencies]
 tempfile = "3.15"
+
+[build-dependencies]
+winresource = "0.1"
 
 [profile.release]
 opt-level = 3

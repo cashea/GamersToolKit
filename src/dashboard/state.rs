@@ -10,6 +10,7 @@ pub enum DashboardView {
     Home,
     Capture,
     Overlay,
+    Vision,
     Profiles,
     Settings,
 }
@@ -21,6 +22,7 @@ impl DashboardView {
             DashboardView::Home => "Home",
             DashboardView::Capture => "Capture",
             DashboardView::Overlay => "Overlay",
+            DashboardView::Vision => "Vision",
             DashboardView::Profiles => "Profiles",
             DashboardView::Settings => "Settings",
         }
@@ -32,6 +34,7 @@ impl DashboardView {
             DashboardView::Home => "H",
             DashboardView::Capture => "C",
             DashboardView::Overlay => "O",
+            DashboardView::Vision => "V",
             DashboardView::Profiles => "P",
             DashboardView::Settings => "S",
         }
@@ -49,6 +52,8 @@ pub struct DashboardState {
     pub capture: CaptureViewState,
     /// Overlay view state
     pub overlay: OverlayViewState,
+    /// Vision view state
+    pub vision: VisionViewState,
     /// Profiles view state
     pub profiles: ProfilesViewState,
     /// Settings view state
@@ -62,6 +67,7 @@ impl Default for DashboardState {
             home: HomeViewState::default(),
             capture: CaptureViewState::default(),
             overlay: OverlayViewState::default(),
+            vision: VisionViewState::default(),
             profiles: ProfilesViewState::default(),
             settings: SettingsViewState::default(),
         }
@@ -142,6 +148,110 @@ pub struct OverlayViewState {
     pub preview_tip_priority: u32,
     /// Show tip preview
     pub show_preview: bool,
+}
+
+/// Vision/OCR view state
+pub struct VisionViewState {
+    /// Selected OCR backend
+    pub selected_backend: crate::vision::OcrBackend,
+    /// Whether OCR models are ready (PaddleOCR)
+    pub models_ready: bool,
+    /// Detection model loaded
+    pub detection_model_ready: bool,
+    /// Recognition model loaded
+    pub recognition_model_ready: bool,
+    /// OCR engine initialized (PaddleOCR)
+    pub ocr_initialized: bool,
+    /// Windows OCR initialized
+    pub windows_ocr_initialized: bool,
+    /// Currently downloading models
+    pub is_downloading: bool,
+    /// Download progress (0.0 to 1.0)
+    pub download_progress: f32,
+    /// Currently processing OCR
+    pub is_processing: bool,
+    /// Pending model download request
+    pub pending_download: bool,
+    /// Pending OCR init request
+    pub pending_init: bool,
+    /// Pending OCR run request
+    pub pending_ocr_run: bool,
+    /// Auto-run OCR on new frames
+    pub auto_run_ocr: bool,
+    /// Show bounding boxes on preview
+    pub show_bounding_boxes: bool,
+    /// Confidence threshold for display
+    pub confidence_threshold: f32,
+    /// Last OCR results
+    pub last_ocr_results: Vec<OcrResultDisplay>,
+    /// Last processing time in ms
+    pub last_processing_time_ms: u64,
+    /// Last error message
+    pub last_error: Option<String>,
+    /// Preview texture handle
+    pub preview_texture: Option<egui::TextureHandle>,
+    /// Preview frame size
+    pub preview_frame_size: Option<(u32, u32)>,
+    /// Last captured frame data for OCR
+    pub last_frame_data: Option<Vec<u8>>,
+    /// Last frame width
+    pub last_frame_width: u32,
+    /// Last frame height
+    pub last_frame_height: u32,
+}
+
+impl std::fmt::Debug for VisionViewState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VisionViewState")
+            .field("models_ready", &self.models_ready)
+            .field("ocr_initialized", &self.ocr_initialized)
+            .field("is_downloading", &self.is_downloading)
+            .field("is_processing", &self.is_processing)
+            .field("last_ocr_results_count", &self.last_ocr_results.len())
+            .field("last_processing_time_ms", &self.last_processing_time_ms)
+            .finish()
+    }
+}
+
+impl Default for VisionViewState {
+    fn default() -> Self {
+        Self {
+            selected_backend: crate::vision::OcrBackend::WindowsOcr, // Default to Windows OCR
+            models_ready: false,
+            detection_model_ready: false,
+            recognition_model_ready: false,
+            ocr_initialized: false,
+            windows_ocr_initialized: false,
+            is_downloading: false,
+            download_progress: 0.0,
+            is_processing: false,
+            pending_download: false,
+            pending_init: false,
+            pending_ocr_run: false,
+            auto_run_ocr: false,
+            show_bounding_boxes: true,
+            confidence_threshold: 0.5,
+            last_ocr_results: Vec::new(),
+            last_processing_time_ms: 0,
+            last_error: None,
+            preview_texture: None,
+            preview_frame_size: None,
+            last_frame_data: None,
+            last_frame_width: 0,
+            last_frame_height: 0,
+        }
+    }
+}
+
+/// OCR result for display
+#[derive(Debug, Clone)]
+pub struct OcrResultDisplay {
+    /// Detected text
+    pub text: String,
+    /// Bounding box (x, y, width, height)
+    pub bounds: (u32, u32, u32, u32),
+    /// Confidence score
+    pub confidence: f32,
 }
 
 /// Profiles view state

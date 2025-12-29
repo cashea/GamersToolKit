@@ -104,18 +104,22 @@ pub fn render_capture_view(
 
     if use_two_columns {
         ui.columns(2, |columns| {
-            render_source_list_column(&mut columns[0], view_state);
+            render_source_list_column(&mut columns[0], view_state, shared_state);
             render_capture_settings_column(&mut columns[1], view_state, shared_state, preview_frame);
         });
     } else {
-        render_source_list_column(ui, view_state);
+        render_source_list_column(ui, view_state, shared_state);
         ui.add_space(16.0);
         render_capture_settings_column(ui, view_state, shared_state, preview_frame);
     }
 }
 
 /// Render the source list column
-fn render_source_list_column(ui: &mut egui::Ui, view_state: &mut CaptureViewState) {
+fn render_source_list_column(
+    ui: &mut egui::Ui,
+    view_state: &mut CaptureViewState,
+    shared_state: &Arc<RwLock<SharedAppState>>,
+) {
     egui::Frame::none()
         .fill(ThemeColors::BG_MEDIUM)
         .rounding(egui::Rounding::same(8.0))
@@ -125,9 +129,9 @@ fn render_source_list_column(ui: &mut egui::Ui, view_state: &mut CaptureViewStat
 
             egui::ScrollArea::vertical().show(ui, |ui| {
                 if view_state.target_type == 0 {
-                    render_window_list(ui, view_state);
+                    render_window_list(ui, view_state, shared_state);
                 } else {
-                    render_monitor_list(ui, view_state);
+                    render_monitor_list(ui, view_state, shared_state);
                 }
             });
         });
@@ -265,22 +269,6 @@ fn render_capture_settings_column(
                 );
             }
 
-            ui.add_space(8.0);
-
-            // Apply button
-            let has_selection = view_state.selected_window.is_some() || view_state.selected_monitor.is_some();
-            ui.add_enabled_ui(has_selection, |ui| {
-                if ui.add(
-                    egui::Button::new(
-                        RichText::new("Apply Selection")
-                            .color(if has_selection { egui::Color32::WHITE } else { ThemeColors::TEXT_MUTED })
-                    )
-                    .fill(if has_selection { ThemeColors::ACCENT_PRIMARY } else { ThemeColors::BG_LIGHT })
-                    .min_size(egui::vec2(140.0, 32.0))
-                ).clicked() {
-                    apply_selection(view_state, shared_state);
-                }
-            });
         });
 }
 
@@ -298,7 +286,11 @@ fn refresh_sources(view_state: &mut CaptureViewState) {
 }
 
 /// Render the window list
-fn render_window_list(ui: &mut egui::Ui, view_state: &mut CaptureViewState) {
+fn render_window_list(
+    ui: &mut egui::Ui,
+    view_state: &mut CaptureViewState,
+    shared_state: &Arc<RwLock<SharedAppState>>,
+) {
     let filter = view_state.search_query.to_lowercase();
     let filtered_windows: Vec<_> = view_state.available_windows
         .iter()
@@ -321,12 +313,18 @@ fn render_window_list(ui: &mut egui::Ui, view_state: &mut CaptureViewState) {
         if response.clicked() {
             view_state.selected_window = Some(idx);
             view_state.selected_monitor = None;
+            // Auto-apply selection
+            apply_selection(view_state, shared_state);
         }
     }
 }
 
 /// Render the monitor list
-fn render_monitor_list(ui: &mut egui::Ui, view_state: &mut CaptureViewState) {
+fn render_monitor_list(
+    ui: &mut egui::Ui,
+    view_state: &mut CaptureViewState,
+    shared_state: &Arc<RwLock<SharedAppState>>,
+) {
     let filter = view_state.search_query.to_lowercase();
     let filtered_monitors: Vec<_> = view_state.available_monitors
         .iter()
@@ -349,6 +347,8 @@ fn render_monitor_list(ui: &mut egui::Ui, view_state: &mut CaptureViewState) {
         if response.clicked() {
             view_state.selected_monitor = Some(idx);
             view_state.selected_window = None;
+            // Auto-apply selection
+            apply_selection(view_state, shared_state);
         }
     }
 }

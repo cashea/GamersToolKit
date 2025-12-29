@@ -31,29 +31,38 @@
 
 ---
 
-## Phase 2: Vision 🔴
+## Phase 2: Vision 🟡
 
-### OCR Integration
-- [ ] ONNX Runtime setup with `ort` crate
-- [ ] PaddleOCR detection model loading
-- [ ] PaddleOCR recognition model loading
-- [ ] Image preprocessing pipeline
-- [ ] Text detection (bounding box extraction)
-- [ ] Text recognition (character inference)
-- [ ] Confidence threshold filtering
-- [ ] Region-of-interest (ROI) cropping
+### OCR Integration 🟢
+- [x] ONNX Runtime setup with `ort` crate
+- [x] PaddleOCR detection model loading (OnnxSession wrapper)
+- [x] PaddleOCR recognition model loading (OnnxSession wrapper)
+- [x] Image preprocessing pipeline (BGRA→RGB, normalize, resize, NCHW)
+- [x] Text detection (binary map → connected components → bounding boxes)
+- [x] Text recognition (CTC decoding)
+- [x] Confidence threshold filtering
+- [x] Region-of-interest (ROI) cropping
 
-### Template Matching
-- [ ] Template loading from profile assets
-- [ ] Multi-scale template matching
-- [ ] Icon/element detection
-- [ ] Detection caching for performance
+### Model Management 🟢
+- [x] Model download with progress (reqwest + streaming)
+- [x] Model version checking (manifest.json)
+- [x] SHA256 checksum verification
+- [x] GPU acceleration support (DirectML on Windows)
+- [x] CPU fallback mode
 
-### Model Management
-- [ ] Model download on first run
-- [ ] Model version checking
-- [ ] GPU acceleration support (CUDA/DirectML)
-- [ ] CPU fallback mode
+### Template Matching 🟢
+- [x] Template loading from profile assets (from_file, from_rgba, from_bgra)
+- [x] Multi-scale template matching (configurable scales)
+- [x] Icon/element detection (normalized cross-correlation)
+- [x] Detection caching for performance (TTL-based cache with hash key)
+- [x] Non-maximum suppression for duplicate removal
+- [x] Mask support for partial matching
+
+### Vision Integration 🟡
+- [ ] Upload PaddleOCR ONNX models to GitHub releases
+- [x] Dashboard OCR preview/debug view
+- [x] End-to-end OCR test infrastructure with capture frames
+- [ ] Performance benchmarking (target: <100ms per frame)
 
 ---
 
