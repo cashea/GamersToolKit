@@ -487,8 +487,35 @@ fn render_labeling_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, ma
                     if view_state.labeled_regions.is_empty() {
                         ui.label(RichText::new("No labels yet").size(13.0).color(ThemeColors::TEXT_MUTED));
                     } else {
+                        // Build sorted indices: active labels first, then by coordinates (y, then x)
+                        let mut sorted_indices: Vec<usize> = (0..view_state.labeled_regions.len()).collect();
+                        sorted_indices.sort_by(|&a, &b| {
+                            let a_active = view_state.labeled_regions_live
+                                .get(a)
+                                .and_then(|live| live.current_text.as_ref())
+                                .is_some();
+                            let b_active = view_state.labeled_regions_live
+                                .get(b)
+                                .and_then(|live| live.current_text.as_ref())
+                                .is_some();
+
+                            // Active labels come first
+                            match (a_active, b_active) {
+                                (true, false) => std::cmp::Ordering::Less,
+                                (false, true) => std::cmp::Ordering::Greater,
+                                _ => {
+                                    // Same active status - sort by coordinates (y first, then x)
+                                    let a_bounds = view_state.labeled_regions[a].bounds;
+                                    let b_bounds = view_state.labeled_regions[b].bounds;
+                                    // bounds is (x, y, width, height)
+                                    (a_bounds.1, a_bounds.0).cmp(&(b_bounds.1, b_bounds.0))
+                                }
+                            }
+                        });
+
                         let mut to_delete: Option<usize> = None;
-                        for (idx, labeled) in view_state.labeled_regions.iter().enumerate() {
+                        for &idx in &sorted_indices {
+                            let labeled = &view_state.labeled_regions[idx];
                             // Get live value if available
                             let live_value = view_state.labeled_regions_live
                                 .get(idx)
