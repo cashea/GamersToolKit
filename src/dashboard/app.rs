@@ -19,6 +19,7 @@ use crate::dashboard::views::{
 use crate::hotkey::HotkeyManager;
 use crate::overlay::OverlayManager;
 use crate::shared::SharedAppState;
+use crate::storage::profiles::GameProfile;
 use crate::vision::{VisionPipeline, ModelManager, ModelType};
 use crate::dashboard::state::OcrResultDisplay;
 use std::thread::JoinHandle;
@@ -57,6 +58,12 @@ pub struct DashboardApp {
     vision_pipeline: Option<VisionPipeline>,
     /// Model manager for downloading OCR models
     model_manager: Option<ModelManager>,
+    /// Profiles directory path for saving
+    profiles_dir: Option<PathBuf>,
+    /// Currently active profile
+    active_profile: Option<GameProfile>,
+    /// Last time profile labels were auto-saved
+    last_profile_save: Instant,
 }
 
 /// Helper for calculating FPS
@@ -96,12 +103,22 @@ impl DashboardApp {
         // Get config directory for saving
         let config_dir = crate::storage::get_config_dir().ok();
 
+        // Get profiles directory
+        let profiles_dir = crate::storage::get_profiles_dir().ok();
+
         // Initialize model manager
         let model_manager = ModelManager::new().ok();
 
+        // Load or create default profile
+        let (active_profile, initial_labels) = Self::load_or_create_default_profile(&profiles_dir);
+
+        let mut dashboard_state = DashboardState::default();
+        // Load labels from profile into vision state
+        dashboard_state.vision.labeled_regions = initial_labels;
+
         Self {
             shared_state,
-            dashboard_state: DashboardState::default(),
+            dashboard_state,
             theme_applied: false,
             capture_manager: Arc::new(Mutex::new(None)),
             frame_counter: FrameCounter::default(),
@@ -116,6 +133,53 @@ impl DashboardApp {
             last_window_save: Instant::now(),
             vision_pipeline: None,
             model_manager,
+            profiles_dir,
+            active_profile,
+            last_profile_save: Instant::now(),
+        }
+    }
+
+    /// Load or create the default profile
+    fn load_or_create_default_profile(
+        profiles_dir: &Option<PathBuf>,
+    ) -> (Option<GameProfile>, Vec<crate::storage::profiles::LabeledRegion>) {
+        if let Some(ref dir) = profiles_dir {
+            let default_path = dir.join("default.json");
+            if default_path.exists() {
+                match crate::storage::profiles::load_profile(&default_path) {
+                    Ok(profile) => {
+                        let labels = profile.labeled_regions.clone();
+                        tracing::info!("Loaded default profile with {} labels", labels.len());
+                        return (Some(profile), labels);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to load default profile: {}", e);
+                    }
+                }
+            }
+
+            // Create a new default profile
+            let profile = GameProfile {
+                id: "default".to_string(),
+                name: "Default Profile".to_string(),
+                executables: vec![],
+                version: "1.0.0".to_string(),
+                ocr_regions: vec![],
+                templates: vec![],
+                rules: vec![],
+                labeled_regions: vec![],
+            };
+
+            // Save the new default profile
+            if let Err(e) = crate::storage::profiles::save_profile(&profile, &default_path) {
+                tracing::warn!("Failed to save default profile: {}", e);
+            } else {
+                tracing::info!("Created new default profile");
+            }
+
+            (Some(profile), vec![])
+        } else {
+            (None, vec![])
         }
     }
 
@@ -322,6 +386,40 @@ impl DashboardApp {
         }
     }
 
+    /// Auto-save profile labels if they've been modified (debounced)
+    fn auto_save_profile_labels(&mut self) {
+        const LABEL_SAVE_DELAY: Duration = Duration::from_secs(2);
+
+        if !self.dashboard_state.vision.labels_dirty {
+            return;
+        }
+
+        // Only save if enough time has passed since last change
+        if self.last_profile_save.elapsed() < LABEL_SAVE_DELAY {
+            return;
+        }
+
+        if let (Some(ref mut profile), Some(ref profiles_dir)) =
+            (&mut self.active_profile, &self.profiles_dir)
+        {
+            // Update profile with current labels from vision state
+            profile.labeled_regions = self.dashboard_state.vision.labeled_regions.clone();
+
+            let profile_path = profiles_dir.join(format!("{}.json", profile.id));
+            if let Err(e) = crate::storage::profiles::save_profile(profile, &profile_path) {
+                tracing::error!("Failed to auto-save profile labels: {}", e);
+            } else {
+                tracing::debug!(
+                    "Auto-saved {} labels to profile '{}'",
+                    profile.labeled_regions.len(),
+                    profile.name
+                );
+                self.dashboard_state.vision.labels_dirty = false;
+                self.last_profile_save = Instant::now();
+            }
+        }
+    }
+
     /// Save window state periodically (debounced, only when changed)
     fn save_window_state(&mut self, ctx: &egui::Context) {
         const WINDOW_SAVE_INTERVAL: Duration = Duration::from_secs(5);
@@ -398,6 +496,9 @@ impl eframe::App for DashboardApp {
         // Auto-save settings if needed
         self.auto_save_settings();
 
+        // Auto-save profile labels if needed
+        self.auto_save_profile_labels();
+
         // Save window state periodically
         self.save_window_state(ctx);
 
@@ -407,8 +508,8 @@ impl eframe::App for DashboardApp {
             self.dashboard_state.settings.has_unsaved_changes = false;
         }
 
-        // Request continuous repaint when capturing to update FPS display
-        if self.is_capturing() || self.pending_save {
+        // Request continuous repaint when capturing or when there are pending saves
+        if self.is_capturing() || self.pending_save || self.dashboard_state.vision.labels_dirty {
             ctx.request_repaint();
         }
 
@@ -486,6 +587,24 @@ impl eframe::App for DashboardApp {
                     tracing::error!("Failed to save config on exit: {}", e);
                 } else {
                     tracing::info!("Saved configuration on exit");
+                }
+            }
+        }
+
+        // Save any pending profile label changes
+        if self.dashboard_state.vision.labels_dirty {
+            if let (Some(ref mut profile), Some(ref profiles_dir)) =
+                (&mut self.active_profile, &self.profiles_dir)
+            {
+                profile.labeled_regions = self.dashboard_state.vision.labeled_regions.clone();
+                let profile_path = profiles_dir.join(format!("{}.json", profile.id));
+                if let Err(e) = crate::storage::profiles::save_profile(profile, &profile_path) {
+                    tracing::error!("Failed to save profile labels on exit: {}", e);
+                } else {
+                    tracing::info!(
+                        "Saved {} labels to profile on exit",
+                        profile.labeled_regions.len()
+                    );
                 }
             }
         }

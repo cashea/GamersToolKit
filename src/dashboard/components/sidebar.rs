@@ -39,6 +39,7 @@ pub fn render_sidebar(ui: &mut egui::Ui, current_view: &mut DashboardView) {
             DashboardView::Home,
             DashboardView::Capture,
             DashboardView::Overlay,
+            DashboardView::Vision,
             DashboardView::Profiles,
             DashboardView::Settings,
         ] {

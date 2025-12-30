@@ -29,3 +29,11 @@ pub fn get_config_dir() -> Result<PathBuf> {
 
     Ok(config_dir)
 }
+
+/// Get the profiles directory (inside data directory)
+pub fn get_profiles_dir() -> Result<PathBuf> {
+    let data_dir = get_data_dir()?;
+    let profiles_dir = data_dir.join("profiles");
+    std::fs::create_dir_all(&profiles_dir)?;
+    Ok(profiles_dir)
+}

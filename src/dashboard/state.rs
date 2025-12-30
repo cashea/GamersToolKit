@@ -1,7 +1,7 @@
 //! Dashboard view state management
 
 use std::time::Instant;
-use crate::storage::profiles::GameProfile;
+use crate::storage::profiles::{GameProfile, LabeledRegion};
 
 /// Current view in the dashboard
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -198,6 +198,22 @@ pub struct VisionViewState {
     pub last_frame_width: u32,
     /// Last frame height
     pub last_frame_height: u32,
+
+    // Region labeling state
+    /// Search text for finding regions
+    pub region_search_text: String,
+    /// Filtered OCR results matching search text
+    pub matching_regions: Vec<usize>,
+    /// Currently selected region index (for labeling)
+    pub selected_region_index: Option<usize>,
+    /// Label text being entered for selected region
+    pub pending_label: String,
+    /// Saved labeled regions
+    pub labeled_regions: Vec<LabeledRegion>,
+    /// Index of labeled region being edited (None = creating new)
+    pub editing_labeled_region: Option<usize>,
+    /// Flag indicating labels have been modified and need saving
+    pub labels_dirty: bool,
 }
 
 impl std::fmt::Debug for VisionViewState {
@@ -239,6 +255,14 @@ impl Default for VisionViewState {
             last_frame_data: None,
             last_frame_width: 0,
             last_frame_height: 0,
+            // Region labeling defaults
+            region_search_text: String::new(),
+            matching_regions: Vec::new(),
+            selected_region_index: None,
+            pending_label: String::new(),
+            labeled_regions: Vec::new(),
+            editing_labeled_region: None,
+            labels_dirty: false,
         }
     }
 }
@@ -253,6 +277,8 @@ pub struct OcrResultDisplay {
     /// Confidence score
     pub confidence: f32,
 }
+
+// LabeledRegion is now imported from crate::storage::profiles
 
 /// Profiles view state
 #[derive(Debug, Default)]

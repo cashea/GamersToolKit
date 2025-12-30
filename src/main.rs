@@ -11,6 +11,7 @@ mod storage;
 mod config;
 mod shared;
 mod dashboard;
+mod hotkey;
 mod app;
 
 use anyhow::Result;
@@ -50,7 +51,8 @@ struct Args {
 fn main() -> Result<()> {
     // Initialize logging
     let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::INFO)
+        .with_max_level(Level::DEBUG)
+        .with_writer(std::io::stderr)
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
 

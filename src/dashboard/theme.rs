@@ -2,7 +2,7 @@
 //!
 //! Dark gaming-inspired theme for the dashboard UI.
 
-use egui::{Color32, FontFamily, FontId, Rounding, Stroke, Style, Visuals};
+use egui::{Color32, FontFamily, FontId, Rounding, Stroke, Style, TextStyle, Visuals};
 
 /// Gaming-inspired dark color palette
 pub struct ThemeColors;
@@ -92,6 +92,16 @@ pub fn apply_theme(ctx: &egui::Context) {
     style.spacing.item_spacing = egui::vec2(8.0, 6.0);
     style.spacing.button_padding = egui::vec2(12.0, 6.0);
     style.spacing.window_margin = egui::Margin::same(16.0);
+
+    // Font sizes - larger for better readability
+    style.text_styles = [
+        (TextStyle::Small, FontId::new(13.0, FontFamily::Proportional)),
+        (TextStyle::Body, FontId::new(16.0, FontFamily::Proportional)),
+        (TextStyle::Monospace, FontId::new(15.0, FontFamily::Monospace)),
+        (TextStyle::Button, FontId::new(16.0, FontFamily::Proportional)),
+        (TextStyle::Heading, FontId::new(22.0, FontFamily::Proportional)),
+    ]
+    .into();
 
     // Apply style
     ctx.set_style(style);

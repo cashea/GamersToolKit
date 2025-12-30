@@ -5,9 +5,10 @@ use parking_lot::{Mutex, RwLock};
 use std::sync::Arc;
 
 use crate::capture::ScreenCapture;
-use crate::dashboard::state::{LabeledRegion, VisionViewState};
+use crate::dashboard::state::VisionViewState;
 use crate::dashboard::theme::ThemeColors;
 use crate::shared::SharedAppState;
+use crate::storage::profiles::LabeledRegion;
 use crate::vision::OcrBackend;
 
 /// Render the vision/OCR view
@@ -29,7 +30,7 @@ pub fn render_vision_view(
 
     // Header with OCR backend controls (compact)
     ui.horizontal(|ui| {
-        ui.heading(RichText::new("Vision / OCR").size(20.0).strong());
+        ui.heading(RichText::new("Vision / OCR").size(24.0).strong());
         ui.add_space(24.0);
         render_ocr_backend_inline(ui, view_state);
     });
@@ -135,7 +136,7 @@ fn render_ocr_backend_inline(ui: &mut egui::Ui, view_state: &mut VisionViewState
 
     // Error display
     if let Some(ref error) = view_state.last_error {
-        ui.label(RichText::new(format!("Error: {}", error)).color(ThemeColors::ACCENT_ERROR).size(11.0));
+        ui.label(RichText::new(format!("Error: {}", error)).color(ThemeColors::ACCENT_ERROR).size(14.0));
     }
 }
 
@@ -156,7 +157,7 @@ fn render_preview_panel(
 
             // Header with controls
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Preview").size(14.0).strong());
+                ui.label(RichText::new("Preview").size(17.0).strong());
                 ui.add_space(8.0);
                 ui.checkbox(&mut view_state.auto_run_ocr, "Auto");
 
@@ -260,7 +261,7 @@ fn render_preview_panel(
                             } else {
                                 "Start capture first"
                             };
-                            ui.label(RichText::new(message).size(12.0).color(ThemeColors::TEXT_MUTED));
+                            ui.label(RichText::new(message).size(15.0).color(ThemeColors::TEXT_MUTED));
                         });
                     }
                 });
@@ -269,7 +270,7 @@ fn render_preview_panel(
             ui.horizontal(|ui| {
                 ui.checkbox(&mut view_state.show_bounding_boxes, "Boxes");
                 if view_state.last_processing_time_ms > 0 {
-                    ui.label(RichText::new(format!("{}ms", view_state.last_processing_time_ms)).size(11.0).color(ThemeColors::TEXT_MUTED));
+                    ui.label(RichText::new(format!("{}ms", view_state.last_processing_time_ms)).size(14.0).color(ThemeColors::TEXT_MUTED));
                 }
             });
         });
@@ -286,15 +287,15 @@ fn render_results_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, max
 
             // Header with count
             ui.horizontal(|ui| {
-                ui.label(RichText::new("OCR Results").size(14.0).strong());
-                ui.label(RichText::new(format!("({})", view_state.last_ocr_results.len())).size(12.0).color(ThemeColors::TEXT_MUTED));
+                ui.label(RichText::new("OCR Results").size(17.0).strong());
+                ui.label(RichText::new(format!("({})", view_state.last_ocr_results.len())).size(15.0).color(ThemeColors::TEXT_MUTED));
             });
 
             ui.add_space(4.0);
 
             // Confidence slider (compact)
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Min:").size(11.0));
+                ui.label(RichText::new("Min:").size(14.0));
                 ui.add(egui::Slider::new(&mut view_state.confidence_threshold, 0.0..=1.0)
                     .step_by(0.05)
                     .fixed_decimals(2)
@@ -315,7 +316,7 @@ fn render_results_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, max
                         .collect();
 
                     if filtered_results.is_empty() {
-                        ui.label(RichText::new("No text detected").size(11.0).color(ThemeColors::TEXT_MUTED));
+                        ui.label(RichText::new("No text detected").size(14.0).color(ThemeColors::TEXT_MUTED));
                     } else {
                         for (idx, result) in filtered_results.iter().enumerate() {
                             egui::Frame::none()
@@ -324,10 +325,10 @@ fn render_results_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, max
                                 .inner_margin(6.0)
                                 .show(ui, |ui| {
                                     ui.horizontal(|ui| {
-                                        ui.label(RichText::new(format!("#{}", idx + 1)).size(11.0).color(ThemeColors::ACCENT_PRIMARY).strong());
-                                        ui.label(RichText::new(format!("{:.0}%", result.confidence * 100.0)).size(10.0).color(confidence_color(result.confidence)));
+                                        ui.label(RichText::new(format!("#{}", idx + 1)).size(14.0).color(ThemeColors::ACCENT_PRIMARY).strong());
+                                        ui.label(RichText::new(format!("{:.0}%", result.confidence * 100.0)).size(13.0).color(confidence_color(result.confidence)));
                                     });
-                                    ui.label(RichText::new(&result.text).size(11.0));
+                                    ui.label(RichText::new(&result.text).size(14.0));
                                 });
                             ui.add_space(2.0);
                         }
@@ -347,15 +348,15 @@ fn render_labeling_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, ma
 
             // Header
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Labeling").size(14.0).strong());
-                ui.label(RichText::new(format!("({})", view_state.labeled_regions.len())).size(12.0).color(ThemeColors::TEXT_MUTED));
+                ui.label(RichText::new("Labeling").size(17.0).strong());
+                ui.label(RichText::new(format!("({})", view_state.labeled_regions.len())).size(15.0).color(ThemeColors::TEXT_MUTED));
             });
 
             ui.add_space(4.0);
 
             // Search input
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Find:").size(11.0));
+                ui.label(RichText::new("Find:").size(14.0));
                 let search_response = ui.add(
                     egui::TextEdit::singleline(&mut view_state.region_search_text)
                         .hint_text("Search...")
@@ -378,16 +379,16 @@ fn render_labeling_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, ma
             let section_height = remaining_height / 2.0;
 
             // Matching regions section
-            ui.label(RichText::new("Matches:").size(11.0).color(ThemeColors::TEXT_MUTED));
+            ui.label(RichText::new("Matches:").size(14.0).color(ThemeColors::TEXT_MUTED));
             egui::ScrollArea::vertical()
                 .id_salt("matching_regions")
                 .max_height(section_height)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     if view_state.region_search_text.is_empty() {
-                        ui.label(RichText::new("Enter search text").size(10.0).color(ThemeColors::TEXT_MUTED));
+                        ui.label(RichText::new("Enter search text").size(13.0).color(ThemeColors::TEXT_MUTED));
                     } else if view_state.matching_regions.is_empty() {
-                        ui.label(RichText::new("No matches").size(10.0).color(ThemeColors::ACCENT_WARNING));
+                        ui.label(RichText::new("No matches").size(13.0).color(ThemeColors::ACCENT_WARNING));
                     } else {
                         let matching_indices: Vec<usize> = view_state.matching_regions.clone();
                         for &idx in &matching_indices {
@@ -401,8 +402,8 @@ fn render_labeling_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, ma
                                     .inner_margin(4.0)
                                     .show(ui, |ui| {
                                         ui.horizontal(|ui| {
-                                            ui.label(RichText::new(format!("#{}", idx + 1)).size(10.0).color(ThemeColors::ACCENT_PRIMARY));
-                                            ui.label(RichText::new(&result.text).size(10.0));
+                                            ui.label(RichText::new(format!("#{}", idx + 1)).size(13.0).color(ThemeColors::ACCENT_PRIMARY));
+                                            ui.label(RichText::new(&result.text).size(13.0));
                                         });
                                     }).response;
 
@@ -422,7 +423,7 @@ fn render_labeling_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, ma
             if let Some(selected_idx) = view_state.selected_region_index {
                 if let Some(result) = view_state.last_ocr_results.get(selected_idx).cloned() {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("Label:").size(11.0));
+                        ui.label(RichText::new("Label:").size(14.0));
                         ui.add(egui::TextEdit::singleline(&mut view_state.pending_label).hint_text("Name...").desired_width(80.0));
                         if !view_state.pending_label.trim().is_empty() {
                             if ui.small_button("Save").clicked() {
@@ -435,6 +436,7 @@ fn render_labeling_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, ma
                                 view_state.labeled_regions.push(labeled);
                                 view_state.pending_label.clear();
                                 view_state.selected_region_index = None;
+                                view_state.labels_dirty = true;
                             }
                         }
                     });
@@ -444,14 +446,14 @@ fn render_labeling_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, ma
             ui.add_space(4.0);
 
             // Labeled regions list
-            ui.label(RichText::new("Labels:").size(11.0).color(ThemeColors::TEXT_MUTED));
+            ui.label(RichText::new("Labels:").size(14.0).color(ThemeColors::TEXT_MUTED));
             egui::ScrollArea::vertical()
                 .id_salt("labeled_regions")
                 .max_height(section_height)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     if view_state.labeled_regions.is_empty() {
-                        ui.label(RichText::new("No labels yet").size(10.0).color(ThemeColors::TEXT_MUTED));
+                        ui.label(RichText::new("No labels yet").size(13.0).color(ThemeColors::TEXT_MUTED));
                     } else {
                         let mut to_delete: Option<usize> = None;
                         for (idx, labeled) in view_state.labeled_regions.iter().enumerate() {
@@ -461,19 +463,20 @@ fn render_labeling_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, ma
                                 .inner_margin(4.0)
                                 .show(ui, |ui| {
                                     ui.horizontal(|ui| {
-                                        ui.label(RichText::new(&labeled.label).size(11.0).color(ThemeColors::ACCENT_SUCCESS).strong());
+                                        ui.label(RichText::new(&labeled.label).size(14.0).color(ThemeColors::ACCENT_SUCCESS).strong());
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                             if ui.small_button("X").clicked() {
                                                 to_delete = Some(idx);
                                             }
                                         });
                                     });
-                                    ui.label(RichText::new(&labeled.matched_text).size(10.0).color(ThemeColors::TEXT_MUTED));
+                                    ui.label(RichText::new(&labeled.matched_text).size(13.0).color(ThemeColors::TEXT_MUTED));
                                 });
                             ui.add_space(2.0);
                         }
                         if let Some(idx) = to_delete {
                             view_state.labeled_regions.remove(idx);
+                            view_state.labels_dirty = true;
                         }
                     }
                 });

@@ -388,6 +388,7 @@ fn render_create_dialog(
                             ocr_regions: vec![],
                             templates: vec![],
                             rules: vec![],
+                            labeled_regions: vec![],
                         };
 
                         let mut state = shared_state.write();

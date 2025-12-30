@@ -39,6 +39,8 @@ pub struct OverlayConfig {
     pub click_through: bool,
     /// Maximum width for tip display in pixels
     pub max_width: f32,
+    /// Whether the overlay is currently visible (can be toggled via hotkey)
+    pub visible: bool,
 }
 
 /// Information about a connected monitor
@@ -68,6 +70,7 @@ impl Default for OverlayConfig {
             monitor_index: Some(0), // Default to primary monitor
             click_through: true,    // Allow clicks to pass through by default
             max_width: 350.0,       // Default tip width in pixels
+            visible: true,          // Visible by default
         }
     }
 }
@@ -374,8 +377,8 @@ impl EguiOverlay for OverlayApp {
         // Get state for rendering
         let state = self.state.read();
 
-        if !state.config.enabled || state.tips.is_empty() {
-            // Request repaint to check for new tips
+        if !state.config.enabled || !state.config.visible || state.tips.is_empty() {
+            // Request repaint to check for new tips or visibility changes
             egui_ctx.request_repaint_after(Duration::from_millis(100));
             return;
         }

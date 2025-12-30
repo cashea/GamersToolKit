@@ -21,6 +21,22 @@ pub struct GameProfile {
     pub templates: Vec<TemplateDefinition>,
     /// Rules to apply
     pub rules: Vec<RuleDefinition>,
+    /// User-defined labeled regions from vision/OCR
+    #[serde(default)]
+    pub labeled_regions: Vec<LabeledRegion>,
+}
+
+/// A labeled region that maps detected text to a user-defined name
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LabeledRegion {
+    /// User-defined label (e.g., "Parsteel", "Tritanium")
+    pub label: String,
+    /// The text that was detected in this region
+    pub matched_text: String,
+    /// Bounding box (x, y, width, height) in pixels
+    pub bounds: (u32, u32, u32, u32),
+    /// Confidence score from OCR
+    pub confidence: f32,
 }
 
 /// A region to run OCR on
@@ -119,6 +135,14 @@ mod tests {
                     script: r#"if health < 20 { alert("Low health!") }"#.to_string(),
                 },
             ],
+            labeled_regions: vec![
+                LabeledRegion {
+                    label: "Gold".to_string(),
+                    matched_text: "1,234".to_string(),
+                    bounds: (100, 50, 80, 20),
+                    confidence: 0.95,
+                },
+            ],
         }
     }
 
@@ -138,6 +162,7 @@ mod tests {
         assert_eq!(profile.ocr_regions.len(), parsed.ocr_regions.len());
         assert_eq!(profile.templates.len(), parsed.templates.len());
         assert_eq!(profile.rules.len(), parsed.rules.len());
+        assert_eq!(profile.labeled_regions.len(), parsed.labeled_regions.len());
     }
 
     #[test]
@@ -258,6 +283,7 @@ mod tests {
             ocr_regions: vec![],
             templates: vec![],
             rules: vec![],
+            labeled_regions: vec![],
         };
 
         let json = serde_json::to_string(&profile).unwrap();
@@ -267,5 +293,6 @@ mod tests {
         assert!(parsed.ocr_regions.is_empty());
         assert!(parsed.templates.is_empty());
         assert!(parsed.rules.is_empty());
+        assert!(parsed.labeled_regions.is_empty());
     }
 }
