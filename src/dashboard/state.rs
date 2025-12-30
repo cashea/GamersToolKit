@@ -3,6 +3,16 @@
 use std::time::Instant;
 use crate::storage::profiles::{GameProfile, LabeledRegion};
 
+/// OCR result granularity - word-level or line-level
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OcrGranularity {
+    /// Individual words with their bounding boxes
+    #[default]
+    Word,
+    /// Full lines with their bounding boxes (words joined)
+    Line,
+}
+
 /// Current view in the dashboard
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DashboardView {
@@ -154,6 +164,8 @@ pub struct OverlayViewState {
 pub struct VisionViewState {
     /// Selected OCR backend
     pub selected_backend: crate::vision::OcrBackend,
+    /// OCR result granularity (word vs line level)
+    pub ocr_granularity: OcrGranularity,
     /// Whether OCR models are ready (PaddleOCR)
     pub models_ready: bool,
     /// Detection model loaded
@@ -210,10 +222,14 @@ pub struct VisionViewState {
     pub pending_label: String,
     /// Saved labeled regions
     pub labeled_regions: Vec<LabeledRegion>,
+    /// Live values for labeled regions (updated from OCR results)
+    pub labeled_regions_live: Vec<LabeledRegionLive>,
     /// Index of labeled region being edited (None = creating new)
     pub editing_labeled_region: Option<usize>,
     /// Flag indicating labels have been modified and need saving
     pub labels_dirty: bool,
+    /// Flag to trigger immediate profile save
+    pub pending_profile_save: bool,
 }
 
 impl std::fmt::Debug for VisionViewState {
@@ -233,6 +249,7 @@ impl Default for VisionViewState {
     fn default() -> Self {
         Self {
             selected_backend: crate::vision::OcrBackend::WindowsOcr, // Default to Windows OCR
+            ocr_granularity: OcrGranularity::Word, // Default to word-level
             models_ready: false,
             detection_model_ready: false,
             recognition_model_ready: false,
@@ -261,8 +278,10 @@ impl Default for VisionViewState {
             selected_region_index: None,
             pending_label: String::new(),
             labeled_regions: Vec::new(),
+            labeled_regions_live: Vec::new(),
             editing_labeled_region: None,
             labels_dirty: false,
+            pending_profile_save: false,
         }
     }
 }
@@ -276,6 +295,105 @@ pub struct OcrResultDisplay {
     pub bounds: (u32, u32, u32, u32),
     /// Confidence score
     pub confidence: f32,
+}
+
+/// Live value for a labeled region, updated from OCR results
+#[derive(Debug, Clone, Default)]
+pub struct LabeledRegionLive {
+    /// Current detected text (None if no match found)
+    pub current_text: Option<String>,
+    /// Current confidence score
+    pub current_confidence: Option<f32>,
+    /// Index of the matched OCR result
+    pub matched_ocr_index: Option<usize>,
+}
+
+impl VisionViewState {
+    /// Update labeled regions with current OCR results by matching bounds
+    /// Returns true if any labels were updated
+    pub fn update_labels_from_ocr(&mut self) -> bool {
+        if self.labeled_regions.is_empty() || self.last_ocr_results.is_empty() {
+            // Clear live values if no OCR results
+            self.labeled_regions_live.clear();
+            return false;
+        }
+
+        // Ensure live values vec matches labeled_regions length
+        self.labeled_regions_live.resize_with(
+            self.labeled_regions.len(),
+            LabeledRegionLive::default,
+        );
+
+        let mut any_updated = false;
+
+        for (label_idx, labeled) in self.labeled_regions.iter().enumerate() {
+            let live = &mut self.labeled_regions_live[label_idx];
+            let old_text = live.current_text.clone();
+
+            // Find best matching OCR result by bounds overlap
+            let mut best_match: Option<(usize, f32)> = None; // (index, overlap_score)
+
+            for (ocr_idx, ocr_result) in self.last_ocr_results.iter().enumerate() {
+                let overlap = calculate_bounds_overlap(labeled.bounds, ocr_result.bounds);
+                if overlap > 0.3 {
+                    // At least 30% overlap required
+                    if best_match.map_or(true, |(_, best_overlap)| overlap > best_overlap) {
+                        best_match = Some((ocr_idx, overlap));
+                    }
+                }
+            }
+
+            if let Some((ocr_idx, _)) = best_match {
+                let ocr_result = &self.last_ocr_results[ocr_idx];
+                live.current_text = Some(ocr_result.text.clone());
+                live.current_confidence = Some(ocr_result.confidence);
+                live.matched_ocr_index = Some(ocr_idx);
+
+                if old_text.as_ref() != Some(&ocr_result.text) {
+                    any_updated = true;
+                }
+            } else {
+                // No match found - clear live values
+                if live.current_text.is_some() {
+                    any_updated = true;
+                }
+                live.current_text = None;
+                live.current_confidence = None;
+                live.matched_ocr_index = None;
+            }
+        }
+
+        any_updated
+    }
+}
+
+/// Calculate overlap ratio between two bounding boxes
+/// Returns a value from 0.0 (no overlap) to 1.0 (perfect overlap)
+fn calculate_bounds_overlap(a: (u32, u32, u32, u32), b: (u32, u32, u32, u32)) -> f32 {
+    let (ax, ay, aw, ah) = a;
+    let (bx, by, bw, bh) = b;
+
+    // Calculate intersection
+    let x1 = ax.max(bx);
+    let y1 = ay.max(by);
+    let x2 = (ax + aw).min(bx + bw);
+    let y2 = (ay + ah).min(by + bh);
+
+    if x1 >= x2 || y1 >= y2 {
+        return 0.0; // No overlap
+    }
+
+    let intersection_area = (x2 - x1) * (y2 - y1);
+    let a_area = aw * ah;
+    let b_area = bw * bh;
+
+    // Use IoU (Intersection over Union) for overlap score
+    let union_area = a_area + b_area - intersection_area;
+    if union_area == 0 {
+        return 0.0;
+    }
+
+    intersection_area as f32 / union_area as f32
 }
 
 // LabeledRegion is now imported from crate::storage::profiles

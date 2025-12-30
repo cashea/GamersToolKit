@@ -20,7 +20,7 @@ use crate::hotkey::HotkeyManager;
 use crate::overlay::OverlayManager;
 use crate::shared::SharedAppState;
 use crate::storage::profiles::GameProfile;
-use crate::vision::{VisionPipeline, ModelManager, ModelType};
+use crate::vision::{VisionPipeline, ModelManager, ModelType, OcrGranularity};
 use crate::dashboard::state::OcrResultDisplay;
 use std::thread::JoinHandle;
 
@@ -387,15 +387,22 @@ impl DashboardApp {
     }
 
     /// Auto-save profile labels if they've been modified (debounced)
+    /// Also handles immediate save when pending_profile_save is set
     fn auto_save_profile_labels(&mut self) {
         const LABEL_SAVE_DELAY: Duration = Duration::from_secs(2);
 
-        if !self.dashboard_state.vision.labels_dirty {
+        // Check for immediate save request
+        let immediate_save = self.dashboard_state.vision.pending_profile_save;
+        if immediate_save {
+            self.dashboard_state.vision.pending_profile_save = false;
+        }
+
+        if !self.dashboard_state.vision.labels_dirty && !immediate_save {
             return;
         }
 
-        // Only save if enough time has passed since last change
-        if self.last_profile_save.elapsed() < LABEL_SAVE_DELAY {
+        // Only save if enough time has passed since last change (unless immediate save requested)
+        if !immediate_save && self.last_profile_save.elapsed() < LABEL_SAVE_DELAY {
             return;
         }
 
@@ -407,10 +414,10 @@ impl DashboardApp {
 
             let profile_path = profiles_dir.join(format!("{}.json", profile.id));
             if let Err(e) = crate::storage::profiles::save_profile(profile, &profile_path) {
-                tracing::error!("Failed to auto-save profile labels: {}", e);
+                tracing::error!("Failed to save profile labels: {}", e);
             } else {
-                tracing::debug!(
-                    "Auto-saved {} labels to profile '{}'",
+                tracing::info!(
+                    "Saved {} labels to profile '{}'",
                     profile.labeled_regions.len(),
                     profile.name
                 );
@@ -857,7 +864,13 @@ impl DashboardApp {
                             height,
                         );
 
-                        match pipeline.process(&frame) {
+                        // Convert dashboard granularity to vision granularity
+                        let granularity = match vision_state.ocr_granularity {
+                            crate::dashboard::state::OcrGranularity::Word => OcrGranularity::Word,
+                            crate::dashboard::state::OcrGranularity::Line => OcrGranularity::Line,
+                        };
+
+                        match pipeline.process_with_granularity(&frame, granularity) {
                             Ok(result) => {
                                 // Convert results to display format
                                 vision_state.last_ocr_results = result.text_regions
@@ -870,6 +883,9 @@ impl DashboardApp {
                                     .collect();
                                 vision_state.last_processing_time_ms = start.elapsed().as_millis() as u64;
                                 vision_state.last_error = None;
+
+                                // Update labeled regions with current OCR results
+                                vision_state.update_labels_from_ocr();
                             }
                             Err(e) => {
                                 vision_state.last_error = Some(format!("OCR failed: {}", e));

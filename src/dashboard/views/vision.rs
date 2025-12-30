@@ -5,7 +5,7 @@ use parking_lot::{Mutex, RwLock};
 use std::sync::Arc;
 
 use crate::capture::ScreenCapture;
-use crate::dashboard::state::VisionViewState;
+use crate::dashboard::state::{OcrGranularity, VisionViewState};
 use crate::dashboard::theme::ThemeColors;
 use crate::shared::SharedAppState;
 use crate::storage::profiles::LabeledRegion;
@@ -86,6 +86,28 @@ fn render_ocr_backend_inline(ui: &mut egui::Ui, view_state: &mut VisionViewState
                 &mut view_state.selected_backend,
                 OcrBackend::PaddleOcr,
                 "PaddleOCR (ONNX)",
+            );
+        });
+
+    ui.add_space(8.0);
+
+    // Granularity selector (Word vs Line)
+    egui::ComboBox::from_id_salt("ocr_granularity")
+        .selected_text(match view_state.ocr_granularity {
+            OcrGranularity::Word => "Words",
+            OcrGranularity::Line => "Lines",
+        })
+        .width(70.0)
+        .show_ui(ui, |ui| {
+            ui.selectable_value(
+                &mut view_state.ocr_granularity,
+                OcrGranularity::Word,
+                "Words",
+            );
+            ui.selectable_value(
+                &mut view_state.ocr_granularity,
+                OcrGranularity::Line,
+                "Lines",
             );
         });
 
@@ -346,10 +368,20 @@ fn render_labeling_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, ma
         .show(ui, |ui| {
             ui.set_max_height(max_height);
 
-            // Header
+            // Header with save button
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Labeling").size(17.0).strong());
                 ui.label(RichText::new(format!("({})", view_state.labeled_regions.len())).size(15.0).color(ThemeColors::TEXT_MUTED));
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // Show dirty indicator and save button
+                    if view_state.labels_dirty {
+                        if ui.small_button("Save").clicked() {
+                            view_state.pending_profile_save = true;
+                        }
+                        ui.label(RichText::new("*").size(14.0).color(ThemeColors::ACCENT_WARNING));
+                    }
+                });
             });
 
             ui.add_space(4.0);
@@ -457,6 +489,11 @@ fn render_labeling_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, ma
                     } else {
                         let mut to_delete: Option<usize> = None;
                         for (idx, labeled) in view_state.labeled_regions.iter().enumerate() {
+                            // Get live value if available
+                            let live_value = view_state.labeled_regions_live
+                                .get(idx)
+                                .and_then(|live| live.current_text.as_ref());
+
                             egui::Frame::none()
                                 .fill(ThemeColors::BG_DARK)
                                 .rounding(egui::Rounding::same(3.0))
@@ -470,12 +507,22 @@ fn render_labeling_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, ma
                                             }
                                         });
                                     });
-                                    ui.label(RichText::new(&labeled.matched_text).size(13.0).color(ThemeColors::TEXT_MUTED));
+                                    // Show current live value (or original if no live value)
+                                    if let Some(current) = live_value {
+                                        ui.label(RichText::new(current).size(13.0));
+                                    } else {
+                                        // No live match - show original with indicator
+                                        ui.label(RichText::new(&labeled.matched_text).size(13.0).color(ThemeColors::TEXT_MUTED).italics());
+                                    }
                                 });
                             ui.add_space(2.0);
                         }
                         if let Some(idx) = to_delete {
                             view_state.labeled_regions.remove(idx);
+                            // Also remove from live values
+                            if idx < view_state.labeled_regions_live.len() {
+                                view_state.labeled_regions_live.remove(idx);
+                            }
                             view_state.labels_dirty = true;
                         }
                     }
