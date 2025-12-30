@@ -494,13 +494,22 @@ fn render_labeling_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, ma
                                 .get(idx)
                                 .and_then(|live| live.current_text.as_ref());
 
+                            let is_active = live_value.is_some();
+                            // Fade inactive labels by reducing opacity
+                            let frame_alpha = if is_active { 1.0 } else { 0.4 };
+
                             egui::Frame::none()
-                                .fill(ThemeColors::BG_DARK)
+                                .fill(ThemeColors::BG_DARK.gamma_multiply(frame_alpha))
                                 .rounding(egui::Rounding::same(3.0))
                                 .inner_margin(4.0)
                                 .show(ui, |ui| {
                                     ui.horizontal(|ui| {
-                                        ui.label(RichText::new(&labeled.label).size(14.0).color(ThemeColors::ACCENT_SUCCESS).strong());
+                                        let label_color = if is_active {
+                                            ThemeColors::ACCENT_SUCCESS
+                                        } else {
+                                            ThemeColors::ACCENT_SUCCESS.gamma_multiply(0.5)
+                                        };
+                                        ui.label(RichText::new(&labeled.label).size(14.0).color(label_color).strong());
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                             if ui.small_button("X").clicked() {
                                                 to_delete = Some(idx);
@@ -511,8 +520,8 @@ fn render_labeling_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, ma
                                     if let Some(current) = live_value {
                                         ui.label(RichText::new(current).size(13.0));
                                     } else {
-                                        // No live match - show original with indicator
-                                        ui.label(RichText::new(&labeled.matched_text).size(13.0).color(ThemeColors::TEXT_MUTED).italics());
+                                        // No live match - show original faded with indicator
+                                        ui.label(RichText::new(format!("{} (inactive)", &labeled.matched_text)).size(13.0).color(ThemeColors::TEXT_MUTED.gamma_multiply(0.6)).italics());
                                     }
                                 });
                             ui.add_space(2.0);
