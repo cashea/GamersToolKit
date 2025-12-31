@@ -5,6 +5,7 @@ use parking_lot::{Mutex, RwLock};
 use std::sync::Arc;
 
 use crate::capture::ScreenCapture;
+use crate::dashboard::components::add_scroll_slider;
 use crate::dashboard::state::{OcrGranularity, VisionViewState};
 use crate::dashboard::theme::ThemeColors;
 use crate::dashboard::views::zone_ocr::{render_zone_ocr_panel, draw_zone_overlays};
@@ -314,27 +315,21 @@ fn render_preview_panel(
 
                         ui.horizontal(|ui| {
                             ui.label(RichText::new("Contrast:").size(13.0));
-                            if ui.add(egui::Slider::new(&mut view_state.preprocessing.contrast, 0.5..=3.0)
-                                .step_by(0.1)
-                                .fixed_decimals(1)).changed() {
+                            if add_scroll_slider(ui, &mut view_state.preprocessing.contrast, 0.5..=3.0, Some(0.1), None, Some(1)).changed() {
                                 settings_changed = true;
                             }
                         });
 
                         ui.horizontal(|ui| {
                             ui.label(RichText::new("Sharpen:").size(13.0));
-                            if ui.add(egui::Slider::new(&mut view_state.preprocessing.sharpen, 0.0..=1.0)
-                                .step_by(0.1)
-                                .fixed_decimals(1)).changed() {
+                            if add_scroll_slider(ui, &mut view_state.preprocessing.sharpen, 0.0..=1.0, Some(0.1), None, Some(1)).changed() {
                                 settings_changed = true;
                             }
                         });
 
                         ui.horizontal(|ui| {
                             ui.label(RichText::new("Scale:").size(13.0));
-                            let scale_slider = ui.add(egui::Slider::new(&mut view_state.preprocessing.scale, 1..=4)
-                                .step_by(1.0)
-                                .suffix("x"));
+                            let scale_slider = add_scroll_slider(ui, &mut view_state.preprocessing.scale, 1..=4, Some(1.0), Some("x"), None);
                             if scale_slider.changed() {
                                 settings_changed = true;
                             }

@@ -5,6 +5,7 @@
 use egui::{Color32, RichText, Rounding, Stroke, Vec2};
 use uuid::Uuid;
 
+use crate::dashboard::components::add_scroll_slider;
 use crate::dashboard::state::{VisionViewState, ZoneOcrResult};
 use crate::storage::profiles::{ContentType, OcrRegion};
 
@@ -352,103 +353,133 @@ fn content_type_name(content_type: &ContentType) -> &'static str {
 
 /// Render the zone settings dialog
 fn render_zone_settings_dialog(ui: &mut egui::Ui, view_state: &mut VisionViewState) {
-    let zone_name = view_state.zone_selection.settings_zone_index
-        .and_then(|idx| view_state.ocr_zones.get(idx))
+    let Some(idx) = view_state.zone_selection.settings_zone_index else {
+        return;
+    };
+
+    let zone_name = view_state.ocr_zones.get(idx)
         .map(|z| z.name.clone())
         .unwrap_or_else(|| "Zone".to_string());
+
+    let mut should_close = false;
 
     egui::Window::new(format!("Settings: {}", zone_name))
         .collapsible(false)
         .resizable(false)
         .min_width(320.0)
-        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
         .show(ui.ctx(), |ui| {
             ui.vertical(|ui| {
-                // Content type selector
+                // Get current zone settings
+                let Some(zone) = view_state.ocr_zones.get_mut(idx) else {
+                    should_close = true;
+                    return;
+                };
+
+                // Content type selector - apply immediately
                 ui.horizontal(|ui| {
                     ui.label("Content type:");
-                    egui::ComboBox::from_id_salt("settings_content_type")
-                        .selected_text(content_type_name(&view_state.zone_selection.pending_content_type))
+                    let mut content_type = zone.content_type.clone();
+                    let response = egui::ComboBox::from_id_salt("settings_content_type")
+                        .selected_text(content_type_name(&content_type))
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut view_state.zone_selection.pending_content_type,
-                                ContentType::Text,
-                                "Text (any characters)",
-                            );
-                            ui.selectable_value(
-                                &mut view_state.zone_selection.pending_content_type,
-                                ContentType::Number,
-                                "Number (digits only)",
-                            );
-                            ui.selectable_value(
-                                &mut view_state.zone_selection.pending_content_type,
-                                ContentType::Percentage,
-                                "Percentage (digits + %)",
-                            );
-                            ui.selectable_value(
-                                &mut view_state.zone_selection.pending_content_type,
-                                ContentType::Time,
-                                "Time (digits + :)",
-                            );
+                            let mut changed = false;
+                            if ui.selectable_value(&mut content_type, ContentType::Text, "Text (any characters)").changed() {
+                                changed = true;
+                            }
+                            if ui.selectable_value(&mut content_type, ContentType::Number, "Number (digits only)").changed() {
+                                changed = true;
+                            }
+                            if ui.selectable_value(&mut content_type, ContentType::Percentage, "Percentage (digits + %)").changed() {
+                                changed = true;
+                            }
+                            if ui.selectable_value(&mut content_type, ContentType::Time, "Time (digits + :)").changed() {
+                                changed = true;
+                            }
+                            changed
                         });
+                    if response.inner.unwrap_or(false) {
+                        zone.content_type = content_type;
+                        view_state.zones_dirty = true;
+                    }
                 });
 
                 ui.add_space(8.0);
                 ui.separator();
                 ui.add_space(8.0);
 
-                // Custom preprocessing toggle
-                ui.checkbox(
-                    &mut view_state.zone_selection.pending_use_custom_preprocessing,
-                    "Use custom preprocessing for this zone",
-                );
+                // Custom preprocessing toggle - apply immediately
+                let mut use_custom = zone.preprocessing.is_some();
+                if ui.checkbox(&mut use_custom, "Use custom preprocessing for this zone").changed() {
+                    if use_custom {
+                        // Enable custom: copy global settings as starting point
+                        zone.preprocessing = Some(view_state.preprocessing.clone());
+                    } else {
+                        // Disable custom: use global settings
+                        zone.preprocessing = None;
+                    }
+                    view_state.zones_dirty = true;
+                }
 
                 ui.add_space(8.0);
 
                 // Preprocessing settings (disabled if not using custom)
-                let use_custom = view_state.zone_selection.pending_use_custom_preprocessing;
-
                 ui.add_enabled_ui(use_custom, |ui| {
                     egui::Frame::none()
                         .fill(Color32::from_rgba_unmultiplied(30, 30, 40, 255))
                         .rounding(Rounding::same(4.0))
                         .inner_margin(12.0)
                         .show(ui, |ui| {
-                            let pp = &mut view_state.zone_selection.pending_preprocessing;
+                            // Need to re-get zone as mutable for preprocessing changes
+                            let Some(zone) = view_state.ocr_zones.get_mut(idx) else {
+                                return;
+                            };
+                            let Some(pp) = zone.preprocessing.as_mut() else {
+                                return;
+                            };
 
-                            ui.checkbox(&mut pp.enabled, "Enable preprocessing");
+                            if ui.checkbox(&mut pp.enabled, "Enable preprocessing").changed() {
+                                view_state.zones_dirty = true;
+                            }
 
                             ui.add_space(4.0);
 
                             ui.add_enabled_ui(pp.enabled, |ui| {
                                 // Grayscale
-                                ui.checkbox(&mut pp.grayscale, "Grayscale");
+                                if ui.checkbox(&mut pp.grayscale, "Grayscale").changed() {
+                                    view_state.zones_dirty = true;
+                                }
 
                                 // Invert colors
-                                ui.checkbox(&mut pp.invert, "Invert colors");
+                                if ui.checkbox(&mut pp.invert, "Invert colors").changed() {
+                                    view_state.zones_dirty = true;
+                                }
 
                                 ui.add_space(4.0);
 
                                 // Contrast
                                 ui.horizontal(|ui| {
                                     ui.label("Contrast:");
-                                    ui.add(egui::Slider::new(&mut pp.contrast, 0.5..=3.0).step_by(0.1));
+                                    if add_scroll_slider(ui, &mut pp.contrast, 0.5..=3.0, Some(0.1), None, Some(1)).changed() {
+                                        view_state.zones_dirty = true;
+                                    }
                                 });
 
                                 // Sharpen
                                 ui.horizontal(|ui| {
                                     ui.label("Sharpen:");
-                                    ui.add(egui::Slider::new(&mut pp.sharpen, 0.0..=2.0).step_by(0.1));
+                                    if add_scroll_slider(ui, &mut pp.sharpen, 0.0..=2.0, Some(0.1), None, Some(1)).changed() {
+                                        view_state.zones_dirty = true;
+                                    }
                                 });
 
                                 // Scale
                                 ui.horizontal(|ui| {
                                     ui.label("Scale:");
                                     let mut scale_val = pp.scale as i32;
-                                    if ui.add(egui::Slider::new(&mut scale_val, 1..=4)).changed() {
+                                    if add_scroll_slider(ui, &mut scale_val, 1..=4, Some(1.0), Some("x"), None).changed() {
                                         pp.scale = scale_val as u32;
+                                        view_state.zones_dirty = true;
                                     }
-                                    ui.label("x");
                                 });
                             });
                         });
@@ -461,34 +492,19 @@ fn render_zone_settings_dialog(ui: &mut egui::Ui, view_state: &mut VisionViewSta
 
                 ui.add_space(12.0);
 
-                // Buttons
+                // Close button
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        view_state.zone_selection.show_settings_dialog = false;
-                        view_state.zone_selection.settings_zone_index = None;
-                    }
-
-                    if ui.button("Save").clicked() {
-                        if let Some(idx) = view_state.zone_selection.settings_zone_index {
-                            if let Some(zone) = view_state.ocr_zones.get_mut(idx) {
-                                // Apply content type
-                                zone.content_type = view_state.zone_selection.pending_content_type.clone();
-                                // Apply preprocessing settings
-                                if view_state.zone_selection.pending_use_custom_preprocessing {
-                                    zone.preprocessing = Some(view_state.zone_selection.pending_preprocessing.clone());
-                                } else {
-                                    zone.preprocessing = None;
-                                }
-                                view_state.zones_dirty = true;
-                            }
-                        }
-
-                        view_state.zone_selection.show_settings_dialog = false;
-                        view_state.zone_selection.settings_zone_index = None;
+                    if ui.button("Close").clicked() {
+                        should_close = true;
                     }
                 });
             });
         });
+
+    if should_close {
+        view_state.zone_selection.show_settings_dialog = false;
+        view_state.zone_selection.settings_zone_index = None;
+    }
 }
 
 /// Draw zone overlays on the preview image

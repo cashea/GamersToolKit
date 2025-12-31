@@ -5,6 +5,7 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 use std::cell::Cell;
 
+use crate::dashboard::components::add_scroll_slider;
 use crate::dashboard::state::{SettingsSection, SettingsViewState};
 use crate::dashboard::theme::ThemeColors;
 use crate::shared::SharedAppState;
@@ -111,7 +112,7 @@ pub fn render_settings_view(
                         ui.label("Max FPS:");
                         ui.add_space(8.0);
                         let mut fps = state.config.capture.max_fps as f32;
-                        if ui.add(egui::Slider::new(&mut fps, 1.0..=60.0).suffix(" fps")).changed() {
+                        if add_scroll_slider(ui, &mut fps, 1.0..=60.0, Some(5.0), Some(" fps"), None).changed() {
                             state.config.capture.max_fps = fps as u32;
                             changed.set(true);
                         }
@@ -187,7 +188,7 @@ pub fn render_settings_view(
                         ui.label("Opacity:");
                         ui.add_space(8.0);
                         let mut opacity = state.config.overlay.opacity;
-                        if ui.add(egui::Slider::new(&mut opacity, 0.1..=1.0).show_value(true)).changed() {
+                        if add_scroll_slider(ui, &mut opacity, 0.1..=1.0, Some(0.05), None, None).changed() {
                             state.config.overlay.opacity = opacity;
                             state.overlay_config.opacity = opacity;
                             changed.set(true);
@@ -210,7 +211,7 @@ pub fn render_settings_view(
                         ui.horizontal(|ui| {
                             ui.label("Sound volume:");
                             ui.add_space(8.0);
-                            if ui.add(egui::Slider::new(&mut volume, 0.0..=1.0).show_value(true)).changed() {
+                            if add_scroll_slider(ui, &mut volume, 0.0..=1.0, Some(0.05), None, None).changed() {
                                 let mut state = shared_state.write();
                                 state.config.overlay.sound_volume = volume;
                                 changed.set(true);
@@ -251,7 +252,7 @@ pub fn render_settings_view(
                         ui.label("Max CPU usage:");
                         ui.add_space(8.0);
                         let mut cpu = state.config.performance.max_cpu_percent as f32;
-                        if ui.add(egui::Slider::new(&mut cpu, 1.0..=50.0).suffix("%")).changed() {
+                        if add_scroll_slider(ui, &mut cpu, 1.0..=50.0, Some(5.0), Some("%"), None).changed() {
                             state.config.performance.max_cpu_percent = cpu as u32;
                             changed.set(true);
                         }
@@ -261,7 +262,7 @@ pub fn render_settings_view(
                         ui.label("Max memory:");
                         ui.add_space(8.0);
                         let mut mem = state.config.performance.max_memory_mb as f32;
-                        if ui.add(egui::Slider::new(&mut mem, 128.0..=2048.0).suffix(" MB")).changed() {
+                        if add_scroll_slider(ui, &mut mem, 128.0..=2048.0, Some(64.0), Some(" MB"), None).changed() {
                             state.config.performance.max_memory_mb = mem as u32;
                             changed.set(true);
                         }
