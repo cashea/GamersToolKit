@@ -126,10 +126,22 @@ fn parse_key_code(key: &str) -> Result<Code> {
     Ok(code)
 }
 
+/// Hotkey event types
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HotkeyEvent {
+    /// No event
+    None,
+    /// Toggle overlay visibility
+    ToggleOverlay,
+    /// Enter zone selection mode
+    EnterZoneSelection,
+}
+
 /// Manages global hotkeys for the application
 pub struct HotkeyManager {
     manager: GlobalHotKeyManager,
     toggle_hotkey_id: Option<u32>,
+    zone_selection_hotkey_id: Option<u32>,
     shared_state: Arc<RwLock<crate::shared::SharedAppState>>,
 }
 
@@ -142,6 +154,7 @@ impl HotkeyManager {
         Ok(Self {
             manager,
             toggle_hotkey_id: None,
+            zone_selection_hotkey_id: None,
             shared_state,
         })
     }
@@ -193,11 +206,55 @@ impl HotkeyManager {
         }
     }
 
-    /// Process pending hotkey events
-    /// Returns true if a toggle event occurred
-    pub fn poll_events(&self) -> bool {
-        let mut toggled = false;
+    /// Register the zone selection hotkey from config
+    pub fn register_zone_selection_hotkey(&mut self) -> Result<()> {
+        // Unregister existing hotkey if any
+        self.unregister_zone_selection_hotkey();
 
+        let hotkey_str = {
+            let state = self.shared_state.read();
+            state.config.overlay.zone_selection_hotkey.clone()
+        };
+
+        if let Some(ref hotkey_str) = hotkey_str {
+            match parse_hotkey(hotkey_str) {
+                Ok(hotkey) => {
+                    self.manager
+                        .register(hotkey)
+                        .map_err(|e| anyhow!("Failed to register zone selection hotkey: {:?}", e))?;
+
+                    self.zone_selection_hotkey_id = Some(hotkey.id());
+                    info!("Registered zone selection hotkey: {}", hotkey_str);
+                }
+                Err(e) => {
+                    warn!("Failed to parse zone selection hotkey '{}': {}", hotkey_str, e);
+                    return Err(e);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Unregister the zone selection hotkey
+    pub fn unregister_zone_selection_hotkey(&mut self) {
+        if let Some(id) = self.zone_selection_hotkey_id.take() {
+            let hotkey_str = {
+                let state = self.shared_state.read();
+                state.config.overlay.zone_selection_hotkey.clone()
+            };
+
+            if let Some(ref hotkey_str) = hotkey_str {
+                if let Ok(hotkey) = parse_hotkey(hotkey_str) {
+                    let _ = self.manager.unregister(hotkey);
+                }
+            }
+        }
+    }
+
+    /// Process pending hotkey events
+    /// Returns the type of hotkey event that occurred
+    pub fn poll_events(&self) -> HotkeyEvent {
         if let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
             if Some(event.id) == self.toggle_hotkey_id {
                 // Toggle overlay visibility
@@ -213,17 +270,23 @@ impl HotkeyManager {
                         "hidden"
                     }
                 );
-                toggled = true;
+                return HotkeyEvent::ToggleOverlay;
+            }
+
+            if Some(event.id) == self.zone_selection_hotkey_id {
+                info!("Hotkey pressed: zone selection mode requested");
+                return HotkeyEvent::EnterZoneSelection;
             }
         }
 
-        toggled
+        HotkeyEvent::None
     }
 }
 
 impl Drop for HotkeyManager {
     fn drop(&mut self) {
         self.unregister_toggle_hotkey();
+        self.unregister_zone_selection_hotkey();
     }
 }
 

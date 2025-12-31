@@ -7,6 +7,7 @@ use std::sync::Arc;
 use crate::capture::ScreenCapture;
 use crate::dashboard::state::{OcrGranularity, VisionViewState};
 use crate::dashboard::theme::ThemeColors;
+use crate::dashboard::views::zone_ocr::{render_zone_ocr_panel, draw_zone_overlays};
 use crate::shared::SharedAppState;
 use crate::storage::profiles::LabeledRegion;
 use crate::vision::OcrBackend;
@@ -40,31 +41,47 @@ pub fn render_vision_view(
     let available_height = ui.available_height();
     let available_width = ui.available_width();
 
-    // Three-column layout for wide screens, two columns for medium
-    if available_width > 1000.0 {
-        // Three columns: Preview | OCR Results | Labeling
-        ui.columns(3, |columns| {
+    // Four-column layout for very wide screens, three for wide, two for medium
+    if available_width > 1400.0 {
+        // Four columns: Preview | OCR Results | Labeling | Zone OCR
+        ui.columns(4, |columns| {
             render_preview_panel(&mut columns[0], view_state, shared_state, preview_frame, available_height);
             render_results_panel(&mut columns[1], view_state, available_height);
             render_labeling_panel(&mut columns[2], view_state, available_height);
+            render_zone_ocr_panel(&mut columns[3], view_state, available_height);
+        });
+    } else if available_width > 1000.0 {
+        // Three columns: Preview | OCR Results | Labeling+Zones stacked
+        ui.columns(3, |columns| {
+            render_preview_panel(&mut columns[0], view_state, shared_state, preview_frame, available_height);
+            render_results_panel(&mut columns[1], view_state, available_height);
+            // Stack labeling and zones in the right column
+            let half_height = (available_height - 16.0) / 2.0;
+            render_labeling_panel(&mut columns[2], view_state, half_height);
+            columns[2].add_space(8.0);
+            render_zone_ocr_panel(&mut columns[2], view_state, half_height);
         });
     } else if available_width > 600.0 {
-        // Two columns: Preview | Results+Labeling stacked
+        // Two columns: Preview | Results+Labeling+Zones stacked
         ui.columns(2, |columns| {
             render_preview_panel(&mut columns[0], view_state, shared_state, preview_frame, available_height);
-            // Stack results and labeling in the right column
-            let half_height = (available_height - 16.0) / 2.0;
-            render_results_panel(&mut columns[1], view_state, half_height);
+            // Stack results, labeling, and zones in the right column
+            let third_height = (available_height - 24.0) / 3.0;
+            render_results_panel(&mut columns[1], view_state, third_height);
             columns[1].add_space(8.0);
-            render_labeling_panel(&mut columns[1], view_state, half_height);
+            render_labeling_panel(&mut columns[1], view_state, third_height);
+            columns[1].add_space(8.0);
+            render_zone_ocr_panel(&mut columns[1], view_state, third_height);
         });
     } else {
         // Single column with tabs or compact view
-        render_preview_panel(ui, view_state, shared_state, preview_frame, available_height * 0.4);
+        render_preview_panel(ui, view_state, shared_state, preview_frame, available_height * 0.35);
         ui.add_space(8.0);
-        render_results_panel(ui, view_state, available_height * 0.3);
+        render_results_panel(ui, view_state, available_height * 0.2);
         ui.add_space(8.0);
-        render_labeling_panel(ui, view_state, available_height * 0.25);
+        render_labeling_panel(ui, view_state, available_height * 0.2);
+        ui.add_space(8.0);
+        render_zone_ocr_panel(ui, view_state, available_height * 0.2);
     }
 }
 
@@ -290,6 +307,11 @@ fn render_preview_panel(
                                     egui::Stroke::new(1.5, ThemeColors::ACCENT_PRIMARY),
                                 );
                             }
+                        }
+
+                        // Draw zone overlays if enabled
+                        if view_state.show_zone_overlays && !view_state.ocr_zones.is_empty() {
+                            draw_zone_overlays(ui, &view_state.ocr_zones, image_rect, &view_state.zone_ocr_results);
                         }
                     } else {
                         // No texture yet - show placeholder

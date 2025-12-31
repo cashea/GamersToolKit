@@ -39,20 +39,34 @@ pub struct LabeledRegion {
     pub confidence: f32,
 }
 
-/// A region to run OCR on
+/// A region to run OCR on (Zone OCR)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OcrRegion {
-    /// Region identifier
+    /// Region identifier (unique within profile)
     pub id: String,
-    /// Region bounds (x, y, width, height) as percentages of screen
+    /// User-friendly name for this zone
+    #[serde(default)]
+    pub name: String,
+    /// Region bounds (x, y, width, height) as percentages of screen (0.0-1.0)
     pub bounds: (f32, f32, f32, f32),
     /// Expected content type
     pub content_type: ContentType,
+    /// Whether this zone is enabled for OCR
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Zone-specific OCR preprocessing settings (uses global settings if None)
+    #[serde(default)]
+    pub preprocessing: Option<crate::config::OcrPreprocessing>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// Type of content expected in a region
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContentType {
+    #[default]
     Text,
     Number,
     Percentage,
@@ -111,13 +125,19 @@ mod tests {
             ocr_regions: vec![
                 OcrRegion {
                     id: "health".to_string(),
+                    name: "Health".to_string(),
                     bounds: (0.1, 0.9, 0.1, 0.05),
                     content_type: ContentType::Number,
+                    enabled: true,
+                    preprocessing: None,
                 },
                 OcrRegion {
                     id: "mana".to_string(),
+                    name: "Mana".to_string(),
                     bounds: (0.2, 0.9, 0.1, 0.05),
                     content_type: ContentType::Percentage,
+                    enabled: true,
+                    preprocessing: None,
                 },
             ],
             templates: vec![
@@ -187,8 +207,10 @@ mod tests {
     fn test_ocr_region_bounds() {
         let region = OcrRegion {
             id: "test".to_string(),
+            name: "Test Zone".to_string(),
             bounds: (0.5, 0.5, 0.2, 0.1),
             content_type: ContentType::Text,
+            enabled: true,
         };
 
         assert_eq!(region.bounds.0, 0.5); // x

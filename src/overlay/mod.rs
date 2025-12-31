@@ -4,6 +4,7 @@
 //! The overlay is a separate window that doesn't interact with the game.
 
 pub mod widgets;
+pub mod zone_selection;
 
 use anyhow::Result;
 use crossbeam_channel::{Receiver, Sender, unbounded};
@@ -17,6 +18,43 @@ use tracing::info;
 
 use crate::analysis::Tip;
 use crate::overlay::widgets::{PriorityStyles, TipStyle};
+use crate::overlay::zone_selection::{ZoneSelectionOverlayState, render_zone_selection};
+
+/// Mode for overlay interaction
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OverlayMode {
+    /// Normal display mode (tips only, click-through)
+    #[default]
+    Normal,
+    /// Zone selection mode (interactive, captures mouse)
+    ZoneSelection,
+}
+
+/// Commands sent from dashboard to overlay for zone selection
+#[derive(Debug, Clone)]
+pub enum ZoneCommand {
+    /// Enter zone selection mode with existing zones to display
+    EnterSelectionMode {
+        existing_zones: Vec<(String, (f32, f32, f32, f32))>,
+    },
+    /// Exit zone selection mode
+    ExitSelectionMode,
+    /// Update zone display (when zones change in dashboard)
+    UpdateZones {
+        zones: Vec<(String, (f32, f32, f32, f32))>,
+    },
+}
+
+/// Results sent from overlay back to dashboard
+#[derive(Debug, Clone)]
+pub enum ZoneSelectionResult {
+    /// User completed a selection
+    Completed {
+        bounds: (f32, f32, f32, f32),
+    },
+    /// User cancelled selection
+    Cancelled,
+}
 
 /// Overlay configuration
 #[derive(Debug, Clone, PartialEq)]
@@ -119,6 +157,10 @@ pub struct OverlayState {
     tips: Vec<DisplayTip>,
     config: OverlayConfig,
     styles: PriorityStyles,
+    /// Current overlay mode
+    mode: OverlayMode,
+    /// Zone selection state
+    zone_selection: ZoneSelectionOverlayState,
 }
 
 impl OverlayState {
@@ -127,6 +169,8 @@ impl OverlayState {
             tips: Vec::new(),
             config,
             styles: PriorityStyles::default(),
+            mode: OverlayMode::Normal,
+            zone_selection: ZoneSelectionOverlayState::default(),
         }
     }
 }
@@ -184,16 +228,28 @@ pub struct OverlayManager {
     state: Arc<RwLock<OverlayState>>,
     tip_sender: Sender<Tip>,
     tip_receiver: Receiver<Tip>,
+    /// Channel for sending zone commands to overlay
+    zone_cmd_sender: Sender<ZoneCommand>,
+    zone_cmd_receiver: Receiver<ZoneCommand>,
+    /// Channel for receiving zone selection results from overlay
+    zone_result_sender: Sender<ZoneSelectionResult>,
+    zone_result_receiver: Receiver<ZoneSelectionResult>,
 }
 
 impl OverlayManager {
     /// Create a new overlay manager
     pub fn new(config: OverlayConfig) -> Result<Self> {
         let (tip_sender, tip_receiver) = unbounded();
+        let (zone_cmd_sender, zone_cmd_receiver) = unbounded();
+        let (zone_result_sender, zone_result_receiver) = unbounded();
         Ok(Self {
             state: Arc::new(RwLock::new(OverlayState::new(config))),
             tip_sender,
             tip_receiver,
+            zone_cmd_sender,
+            zone_cmd_receiver,
+            zone_result_sender,
+            zone_result_receiver,
         })
     }
 
@@ -242,6 +298,29 @@ impl OverlayManager {
         state.config.click_through
     }
 
+    /// Enter zone selection mode
+    ///
+    /// Sends a command to the overlay to enter zone selection mode,
+    /// displaying existing zones and allowing the user to draw a new one.
+    pub fn enter_zone_selection_mode(&self, existing_zones: Vec<(String, (f32, f32, f32, f32))>) {
+        let _ = self.zone_cmd_sender.send(ZoneCommand::EnterSelectionMode { existing_zones });
+    }
+
+    /// Exit zone selection mode
+    pub fn exit_zone_selection_mode(&self) {
+        let _ = self.zone_cmd_sender.send(ZoneCommand::ExitSelectionMode);
+    }
+
+    /// Update the zones displayed on the overlay
+    pub fn update_zones(&self, zones: Vec<(String, (f32, f32, f32, f32))>) {
+        let _ = self.zone_cmd_sender.send(ZoneCommand::UpdateZones { zones });
+    }
+
+    /// Poll for zone selection results (non-blocking)
+    pub fn poll_zone_selection_result(&self) -> Option<ZoneSelectionResult> {
+        self.zone_result_receiver.try_recv().ok()
+    }
+
     /// Run the overlay event loop (blocking)
     /// This should be called from the main thread
     pub fn run(&self) -> Result<()> {
@@ -249,12 +328,16 @@ impl OverlayManager {
 
         let state = self.state.clone();
         let tip_receiver = self.tip_receiver.clone();
+        let zone_cmd_receiver = self.zone_cmd_receiver.clone();
+        let zone_result_sender = self.zone_result_sender.clone();
         let config = self.state.read().config.clone();
 
         // Create the overlay app
         let app = OverlayApp {
             state,
             tip_receiver,
+            zone_cmd_receiver,
+            zone_result_sender,
             positioned: false,
             monitor_bounds: None,
             current_click_through: config.click_through,
@@ -272,6 +355,10 @@ impl OverlayManager {
 struct OverlayApp {
     state: Arc<RwLock<OverlayState>>,
     tip_receiver: Receiver<Tip>,
+    /// Receiver for zone selection commands
+    zone_cmd_receiver: Receiver<ZoneCommand>,
+    /// Sender for zone selection results
+    zone_result_sender: Sender<ZoneSelectionResult>,
     /// Whether we've positioned the window on the target monitor
     positioned: bool,
     /// Cached monitor bounds for the selected monitor (x, y, width, height)
@@ -289,8 +376,38 @@ impl EguiOverlay for OverlayApp {
         _default_gfx_backend: &mut ThreeDBackend,
         glfw_backend: &mut GlfwBackend,
     ) {
-        // Check if click-through setting changed at runtime
-        let desired_click_through = self.state.read().config.click_through;
+        // Process zone commands
+        while let Ok(cmd) = self.zone_cmd_receiver.try_recv() {
+            let mut state = self.state.write();
+            match cmd {
+                ZoneCommand::EnterSelectionMode { existing_zones } => {
+                    state.mode = OverlayMode::ZoneSelection;
+                    state.zone_selection.existing_zones = existing_zones;
+                    state.zone_selection.start_point = None;
+                    state.zone_selection.current_point = None;
+                    state.zone_selection.completed_selection = None;
+                    info!("Entered zone selection mode");
+                }
+                ZoneCommand::ExitSelectionMode => {
+                    state.mode = OverlayMode::Normal;
+                    state.zone_selection = ZoneSelectionOverlayState::default();
+                    info!("Exited zone selection mode");
+                }
+                ZoneCommand::UpdateZones { zones } => {
+                    state.zone_selection.existing_zones = zones;
+                }
+            }
+        }
+
+        // Get current mode to determine click-through behavior
+        let current_mode = self.state.read().mode;
+
+        // In zone selection mode, disable click-through to capture mouse
+        let desired_click_through = match current_mode {
+            OverlayMode::Normal => self.state.read().config.click_through,
+            OverlayMode::ZoneSelection => false, // Must capture mouse for drawing
+        };
+
         if desired_click_through != self.current_click_through {
             glfw_backend.set_passthrough(desired_click_through);
             self.current_click_through = desired_click_through;
@@ -353,6 +470,36 @@ impl EguiOverlay for OverlayApp {
                     );
                 }
             }
+        }
+
+        // Handle zone selection mode
+        if current_mode == OverlayMode::ZoneSelection {
+            let screen_size = self.monitor_bounds
+                .map(|(_, _, w, h)| (w as f32, h as f32))
+                .unwrap_or((1920.0, 1080.0));
+
+            let result = {
+                let mut state = self.state.write();
+                render_zone_selection(egui_ctx, &mut state.zone_selection, screen_size)
+            };
+
+            // Handle zone selection result
+            if let Some(zone_result) = result {
+                let _ = self.zone_result_sender.send(zone_result.clone());
+
+                // If completed or cancelled, exit zone selection mode
+                match zone_result {
+                    ZoneSelectionResult::Completed { .. } | ZoneSelectionResult::Cancelled => {
+                        let mut state = self.state.write();
+                        state.mode = OverlayMode::Normal;
+                        state.zone_selection = ZoneSelectionOverlayState::default();
+                    }
+                }
+            }
+
+            // Request continuous repaints in zone selection mode
+            egui_ctx.request_repaint_after(Duration::from_millis(16));
+            return;
         }
 
         // Process incoming tips

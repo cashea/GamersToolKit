@@ -304,31 +304,101 @@ impl VisionPipeline {
         width: u32,
         height: u32,
     ) -> Result<VisionResult> {
+        self.process_region_with_preprocessing(frame, x, y, width, height, None)
+    }
+
+    /// Process a specific region of a frame with optional custom preprocessing
+    pub fn process_region_with_preprocessing(
+        &mut self,
+        frame: &CapturedFrame,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+        preprocessing: Option<&crate::config::OcrPreprocessing>,
+    ) -> Result<VisionResult> {
         // Extract the region from the frame
         let region_data = extract_region(&frame.data, frame.width, frame.height, x, y, width, height);
+
+        // Determine auto-upscale factor for small regions
+        // Windows OCR needs ~40+ pixel height for reliable detection
+        const MIN_OCR_DIMENSION: u32 = 80;
+        let auto_scale = if height < MIN_OCR_DIMENSION || width < MIN_OCR_DIMENSION {
+            let height_scale = (MIN_OCR_DIMENSION as f32 / height as f32).ceil() as u32;
+            let width_scale = (MIN_OCR_DIMENSION as f32 / width as f32).ceil() as u32;
+            height_scale.max(width_scale).max(2).min(4) // Scale 2x-4x for small regions
+        } else {
+            1
+        };
+
+        // Apply preprocessing if provided, with auto-upscaling for small regions
+        let (processed_data, proc_width, proc_height) = if let Some(pp) = preprocessing {
+            // Merge auto-scale with user's scale setting
+            let effective_scale = pp.scale.max(auto_scale);
+            if effective_scale != pp.scale {
+                info!(
+                    "Auto-upscaling small region from {}x{} by {}x (user scale: {})",
+                    width, height, effective_scale, pp.scale
+                );
+                let mut adjusted_pp = pp.clone();
+                adjusted_pp.scale = effective_scale;
+                let result = apply_preprocessing_with_scale(&region_data, width, height, &adjusted_pp);
+                (result.data, result.width, result.height)
+            } else {
+                let result = apply_preprocessing_with_scale(&region_data, width, height, pp);
+                (result.data, result.width, result.height)
+            }
+        } else if auto_scale > 1 {
+            // No preprocessing specified but region is small - apply auto-upscaling
+            info!(
+                "Auto-upscaling small region from {}x{} by {}x",
+                width, height, auto_scale
+            );
+            let auto_pp = crate::config::OcrPreprocessing {
+                enabled: true,
+                scale: auto_scale,
+                ..Default::default()
+            };
+            let result = apply_preprocessing_with_scale(&region_data, width, height, &auto_pp);
+            (result.data, result.width, result.height)
+        } else {
+            (region_data, width, height)
+        };
 
         let start = Instant::now();
 
         let text_regions = match self.config.backend {
             OcrBackend::WindowsOcr => {
-                let results = self.process_windows_ocr(&region_data, width, height)?;
-                // Offset bounds by region position
+                let results = self.process_windows_ocr(&processed_data, proc_width, proc_height)?;
+                // Offset bounds by region position (scale back if preprocessing scaled)
+                let scale_factor = if proc_width != width { width as f32 / proc_width as f32 } else { 1.0 };
                 results
                     .into_iter()
                     .map(|r| TextRegion {
                         text: r.text,
-                        bounds: (r.bounds.0 + x, r.bounds.1 + y, r.bounds.2, r.bounds.3),
+                        bounds: (
+                            x + (r.bounds.0 as f32 * scale_factor) as u32,
+                            y + (r.bounds.1 as f32 * scale_factor) as u32,
+                            (r.bounds.2 as f32 * scale_factor) as u32,
+                            (r.bounds.3 as f32 * scale_factor) as u32,
+                        ),
                         confidence: r.confidence,
                     })
                     .collect()
             }
             OcrBackend::PaddleOcr => {
-                let results = self.process_paddle_ocr(&region_data, width, height)?;
+                let results = self.process_paddle_ocr(&processed_data, proc_width, proc_height)?;
+                let scale_factor = if proc_width != width { width as f32 / proc_width as f32 } else { 1.0 };
                 results
                     .into_iter()
                     .map(|r| TextRegion {
                         text: r.text,
-                        bounds: (r.bounds.0 + x, r.bounds.1 + y, r.bounds.2, r.bounds.3),
+                        bounds: (
+                            x + (r.bounds.0 as f32 * scale_factor) as u32,
+                            y + (r.bounds.1 as f32 * scale_factor) as u32,
+                            (r.bounds.2 as f32 * scale_factor) as u32,
+                            (r.bounds.3 as f32 * scale_factor) as u32,
+                        ),
                         confidence: r.confidence,
                     })
                     .collect()
