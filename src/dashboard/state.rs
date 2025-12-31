@@ -385,6 +385,8 @@ pub struct ZoneSelectionState {
     pub pending_preprocessing: crate::config::OcrPreprocessing,
     /// Whether to use custom preprocessing for this zone
     pub pending_use_custom_preprocessing: bool,
+    /// Zone index being repositioned (None = creating new zone)
+    pub repositioning_zone_index: Option<usize>,
 }
 
 /// Zone OCR result for display

@@ -5,7 +5,7 @@ use parking_lot::{Mutex, RwLock};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Sender};
 
 use crate::analysis::Tip;
 use crate::capture::{CaptureTarget, ScreenCapture};
@@ -20,20 +20,10 @@ use crate::dashboard::views::{
 use crate::hotkey::HotkeyManager;
 use crate::overlay::{OverlayManager, ZoneSelectionResult};
 use crate::shared::SharedAppState;
-use crate::storage::profiles::GameProfile;
+use crate::storage::profiles::{GameProfile, ContentType};
 use crate::dashboard::state::ZoneOcrResult;
 use crate::vision::{VisionPipeline, ModelManager, ModelType, OcrGranularity};
-use crate::dashboard::state::OcrResultDisplay;
 use std::thread::JoinHandle;
-
-/// Preprocessed data from background thread, ready for OCR
-struct PreprocessedFrame {
-    data: Vec<u8>,
-    width: u32,
-    height: u32,
-    scale_factor: u32,
-    start_time: Instant,
-}
 
 /// The main dashboard application
 pub struct DashboardApp {
@@ -79,8 +69,6 @@ pub struct DashboardApp {
     last_synced_vision: Option<crate::config::VisionSettings>,
     /// Last synced dashboard view (for change detection)
     last_synced_view: Option<DashboardView>,
-    /// Channel to receive preprocessed frames from background thread
-    preprocess_rx: Option<Receiver<PreprocessedFrame>>,
 }
 
 /// Helper for calculating FPS
@@ -191,7 +179,6 @@ impl DashboardApp {
             last_profile_save: Instant::now(),
             last_synced_vision: Some(vision_settings),
             last_synced_view: Some(DashboardView::from_setting(dashboard_settings.last_view)),
-            preprocess_rx: None,
         }
     }
 
@@ -596,7 +583,6 @@ impl DashboardApp {
                     || last.granularity != current_vision.granularity
                     || (last.match_threshold - current_vision.match_threshold).abs() > 0.001
                     || last.show_bounding_boxes != current_vision.show_bounding_boxes
-                    || last.auto_run_ocr != current_vision.auto_run_ocr
                     || last.preprocessing != current_vision.preprocessing
             }
             None => true,
@@ -1011,120 +997,6 @@ impl DashboardApp {
 
             self.vision_pipeline = Some(pipeline);
         }
-
-        // Check for preprocessed frame results from background thread
-        if let Some(ref rx) = self.preprocess_rx {
-            if let Ok(preprocessed) = rx.try_recv() {
-                // Preprocessing done, now run OCR on main thread (Windows OCR is fast)
-                if let Some(ref mut pipeline) = self.vision_pipeline {
-                    pipeline.set_backend(vision_state.selected_backend);
-
-                    let frame = crate::capture::frame::CapturedFrame::new(
-                        preprocessed.data,
-                        preprocessed.width,
-                        preprocessed.height,
-                    );
-
-                    let granularity = match vision_state.ocr_granularity {
-                        crate::dashboard::state::OcrGranularity::Word => OcrGranularity::Word,
-                        crate::dashboard::state::OcrGranularity::Line => OcrGranularity::Line,
-                    };
-
-                    match pipeline.process_with_granularity(&frame, granularity) {
-                        Ok(result) => {
-                            vision_state.last_ocr_results = result.text_regions
-                                .into_iter()
-                                .map(|r| {
-                                    let bounds = if preprocessed.scale_factor > 1 {
-                                        (
-                                            r.bounds.0 / preprocessed.scale_factor,
-                                            r.bounds.1 / preprocessed.scale_factor,
-                                            r.bounds.2 / preprocessed.scale_factor,
-                                            r.bounds.3 / preprocessed.scale_factor,
-                                        )
-                                    } else {
-                                        r.bounds
-                                    };
-                                    OcrResultDisplay {
-                                        text: r.text,
-                                        bounds,
-                                        confidence: r.confidence,
-                                    }
-                                })
-                                .collect();
-                            vision_state.last_processing_time_ms = preprocessed.start_time.elapsed().as_millis() as u64;
-                            vision_state.last_error = None;
-                            vision_state.update_labels_from_ocr();
-                        }
-                        Err(e) => {
-                            vision_state.last_error = Some(format!("OCR failed: {}", e));
-                            tracing::error!("OCR processing failed: {}", e);
-                        }
-                    }
-                }
-                vision_state.is_processing = false;
-                self.preprocess_rx = None;
-            }
-        }
-
-        // Handle OCR run request (manual or auto)
-        let backend_ready = match vision_state.selected_backend {
-            OcrBackend::WindowsOcr => vision_state.windows_ocr_initialized,
-            OcrBackend::PaddleOcr => vision_state.ocr_initialized,
-        };
-        let should_run_ocr = vision_state.pending_ocr_run
-            || (vision_state.auto_run_ocr && vision_state.last_frame_data.is_some());
-
-        // Only start new OCR if not already processing
-        if should_run_ocr && backend_ready && self.vision_pipeline.is_some() && !vision_state.is_processing {
-            vision_state.pending_ocr_run = false;
-
-            if let Some(frame_data) = vision_state.last_frame_data.take() {
-                let width = vision_state.last_frame_width;
-                let height = vision_state.last_frame_height;
-
-                if width > 0 && height > 0 {
-                    vision_state.is_processing = true;
-
-                    // Clone preprocessing settings for the thread
-                    let preprocessing = vision_state.preprocessing.clone();
-                    let scale_factor = if preprocessing.enabled && preprocessing.scale > 1 {
-                        preprocessing.scale
-                    } else {
-                        1
-                    };
-
-                    // Create channel for result
-                    let (tx, rx) = mpsc::channel();
-                    self.preprocess_rx = Some(rx);
-
-                    // Spawn background thread for preprocessing (the slow part)
-                    std::thread::spawn(move || {
-                        let start_time = Instant::now();
-
-                        let preprocess_result = crate::vision::ocr_preprocess::apply_preprocessing_with_scale(
-                            &frame_data,
-                            width,
-                            height,
-                            &preprocessing,
-                        );
-
-                        let _ = tx.send(PreprocessedFrame {
-                            data: preprocess_result.data,
-                            width: preprocess_result.width,
-                            height: preprocess_result.height,
-                            scale_factor,
-                            start_time,
-                        });
-                    });
-                }
-            }
-        }
-
-        // Clear frame data after auto-run to prevent repeated processing
-        if vision_state.auto_run_ocr && !vision_state.is_processing {
-            vision_state.last_frame_data = None;
-        }
     }
 
     /// Process zone selection and OCR commands
@@ -1172,20 +1044,40 @@ impl DashboardApp {
             if let Some(result) = manager.poll_zone_selection_result() {
                 match result {
                     ZoneSelectionResult::Completed { bounds } => {
-                        vision_state.zone_selection.current_selection = Some(bounds);
-                        vision_state.zone_selection.show_naming_dialog = true;
+                        // Check if we're repositioning an existing zone
+                        if let Some(idx) = vision_state.zone_selection.repositioning_zone_index {
+                            // Update existing zone's bounds
+                            if let Some(zone) = vision_state.ocr_zones.get_mut(idx) {
+                                zone.bounds = bounds;
+                                vision_state.zones_dirty = true;
+                                tracing::info!(
+                                    "Zone '{}' repositioned: ({:.2}, {:.2}, {:.2}, {:.2})",
+                                    zone.name,
+                                    bounds.0,
+                                    bounds.1,
+                                    bounds.2,
+                                    bounds.3
+                                );
+                            }
+                            vision_state.zone_selection.repositioning_zone_index = None;
+                        } else {
+                            // Creating a new zone - show naming dialog
+                            vision_state.zone_selection.current_selection = Some(bounds);
+                            vision_state.zone_selection.show_naming_dialog = true;
+                            tracing::info!(
+                                "Zone selection completed: ({:.2}, {:.2}, {:.2}, {:.2})",
+                                bounds.0,
+                                bounds.1,
+                                bounds.2,
+                                bounds.3
+                            );
+                        }
                         vision_state.zone_selection.is_selecting = false;
-                        tracing::info!(
-                            "Zone selection completed: ({:.2}, {:.2}, {:.2}, {:.2})",
-                            bounds.0,
-                            bounds.1,
-                            bounds.2,
-                            bounds.3
-                        );
                     }
                     ZoneSelectionResult::Cancelled => {
                         vision_state.zone_selection.is_selecting = false;
                         vision_state.zone_selection.current_selection = None;
+                        vision_state.zone_selection.repositioning_zone_index = None;
                         tracing::info!("Zone selection cancelled");
                     }
                 }
@@ -1330,12 +1222,15 @@ impl DashboardApp {
                     }
 
                     // Combine all detected text
-                    let text: String = result
+                    let raw_text: String = result
                         .text_regions
                         .iter()
                         .map(|r| r.text.as_str())
                         .collect::<Vec<_>>()
                         .join(" ");
+
+                    // Filter text based on content type
+                    let text = filter_text_by_content_type(&raw_text, &zone.content_type);
 
                     // Update zone result
                     vision_state.zone_ocr_results.insert(
@@ -1364,4 +1259,65 @@ pub fn run_dashboard(shared_state: Arc<RwLock<SharedAppState>>) -> Result<(), ef
         DashboardApp::options(),
         Box::new(|_cc| Ok(Box::new(app))),
     )
+}
+
+/// Filter OCR text based on the expected content type
+/// This helps clean up OCR results by removing characters that don't match the expected type
+fn filter_text_by_content_type(text: &str, content_type: &ContentType) -> String {
+    match content_type {
+        ContentType::Text => {
+            // For text, just trim whitespace
+            text.trim().to_string()
+        }
+        ContentType::Number => {
+            // Keep only digits, decimal points, commas (for thousands), and minus sign
+            // Also handle common OCR mistakes: O->0, l/I->1, S->5, B->8
+            let cleaned: String = text
+                .chars()
+                .map(|c| match c {
+                    'O' | 'o' => '0',
+                    'l' | 'I' | '|' => '1',
+                    'S' | 's' => '5',
+                    'B' => '8',
+                    _ => c,
+                })
+                .filter(|c| c.is_ascii_digit() || *c == '.' || *c == ',' || *c == '-')
+                .collect();
+            cleaned
+        }
+        ContentType::Percentage => {
+            // Keep digits, decimal points, and percent sign
+            let cleaned: String = text
+                .chars()
+                .map(|c| match c {
+                    'O' | 'o' => '0',
+                    'l' | 'I' | '|' => '1',
+                    'S' | 's' => '5',
+                    'B' => '8',
+                    _ => c,
+                })
+                .filter(|c| c.is_ascii_digit() || *c == '.' || *c == '%' || *c == '-')
+                .collect();
+            // Ensure % is at the end if present anywhere
+            if cleaned.contains('%') {
+                let without_percent: String = cleaned.chars().filter(|c| *c != '%').collect();
+                format!("{}%", without_percent)
+            } else {
+                cleaned
+            }
+        }
+        ContentType::Time => {
+            // Keep digits and colons for time formats like 12:34 or 1:23:45
+            let cleaned: String = text
+                .chars()
+                .map(|c| match c {
+                    'O' | 'o' => '0',
+                    'l' | 'I' | '|' => '1',
+                    _ => c,
+                })
+                .filter(|c| c.is_ascii_digit() || *c == ':')
+                .collect();
+            cleaned
+        }
+    }
 }

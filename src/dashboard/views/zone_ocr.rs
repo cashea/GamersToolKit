@@ -33,7 +33,12 @@ pub fn render_zone_ocr_panel(
         if view_state.zone_selection.is_selecting {
             ui.horizontal(|ui| {
                 ui.spinner();
-                ui.label(RichText::new("Drawing zone on overlay... Press ESC to cancel").color(Color32::YELLOW));
+                let status_text = if view_state.zone_selection.repositioning_zone_index.is_some() {
+                    "Repositioning zone on overlay... Press ESC to cancel"
+                } else {
+                    "Drawing zone on overlay... Press ESC to cancel"
+                };
+                ui.label(RichText::new(status_text).color(Color32::YELLOW));
             });
             ui.add_space(4.0);
         }
@@ -58,6 +63,7 @@ pub fn render_zone_ocr_panel(
         // Zone list with scrolling
         let available_height = max_height - 100.0;
         egui::ScrollArea::vertical()
+            .id_salt("zone_ocr_list")
             .max_height(available_height.max(100.0))
             .show(ui, |ui| {
                 if view_state.ocr_zones.is_empty() {
@@ -69,6 +75,8 @@ pub fn render_zone_ocr_panel(
                     let mut zone_to_delete: Option<usize> = None;
                     let mut zone_to_toggle: Option<usize> = None;
                     let mut zone_to_configure: Option<usize> = None;
+                    let mut zone_to_reposition: Option<usize> = None;
+                    let is_selecting = view_state.zone_selection.is_selecting;
 
                     for (idx, zone) in view_state.ocr_zones.iter().enumerate() {
                         let ocr_result = view_state.zone_ocr_results.get(&zone.id);
@@ -81,7 +89,9 @@ pub fn render_zone_ocr_panel(
                                 &mut zone_to_toggle,
                                 &mut zone_to_delete,
                                 &mut zone_to_configure,
+                                &mut zone_to_reposition,
                                 idx,
+                                is_selecting,
                             );
                         });
 
@@ -110,11 +120,18 @@ pub fn render_zone_ocr_panel(
                             // Initialize pending settings from zone's current settings
                             view_state.zone_selection.settings_zone_index = Some(idx);
                             view_state.zone_selection.show_settings_dialog = true;
+                            view_state.zone_selection.pending_content_type = zone.content_type.clone();
                             view_state.zone_selection.pending_use_custom_preprocessing = zone.preprocessing.is_some();
                             view_state.zone_selection.pending_preprocessing = zone.preprocessing
                                 .clone()
                                 .unwrap_or_else(|| view_state.preprocessing.clone());
                         }
+                    }
+
+                    // Handle reposition
+                    if let Some(idx) = zone_to_reposition {
+                        view_state.zone_selection.repositioning_zone_index = Some(idx);
+                        view_state.pending_zone_selection_mode = true;
                     }
                 }
             });
@@ -139,7 +156,9 @@ fn render_zone_item(
     zone_to_toggle: &mut Option<usize>,
     zone_to_delete: &mut Option<usize>,
     zone_to_configure: &mut Option<usize>,
+    zone_to_reposition: &mut Option<usize>,
     idx: usize,
+    is_selecting: bool,
 ) {
     let is_enabled = zone.enabled;
     let has_custom_preprocessing = zone.preprocessing.is_some();
@@ -184,6 +203,14 @@ fn render_zone_item(
                     };
                     if ui.button(RichText::new("...").color(settings_color)).on_hover_text("Zone OCR settings").clicked() {
                         *zone_to_configure = Some(idx);
+                    }
+
+                    // Reposition button (disabled while selecting)
+                    if ui.add_enabled(!is_selecting, egui::Button::new("[]").small())
+                        .on_hover_text("Reposition zone")
+                        .clicked()
+                    {
+                        *zone_to_reposition = Some(idx);
                     }
 
                     // Enable/disable toggle
@@ -337,6 +364,39 @@ fn render_zone_settings_dialog(ui: &mut egui::Ui, view_state: &mut VisionViewSta
         .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
         .show(ui.ctx(), |ui| {
             ui.vertical(|ui| {
+                // Content type selector
+                ui.horizontal(|ui| {
+                    ui.label("Content type:");
+                    egui::ComboBox::from_id_salt("settings_content_type")
+                        .selected_text(content_type_name(&view_state.zone_selection.pending_content_type))
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut view_state.zone_selection.pending_content_type,
+                                ContentType::Text,
+                                "Text (any characters)",
+                            );
+                            ui.selectable_value(
+                                &mut view_state.zone_selection.pending_content_type,
+                                ContentType::Number,
+                                "Number (digits only)",
+                            );
+                            ui.selectable_value(
+                                &mut view_state.zone_selection.pending_content_type,
+                                ContentType::Percentage,
+                                "Percentage (digits + %)",
+                            );
+                            ui.selectable_value(
+                                &mut view_state.zone_selection.pending_content_type,
+                                ContentType::Time,
+                                "Time (digits + :)",
+                            );
+                        });
+                });
+
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(8.0);
+
                 // Custom preprocessing toggle
                 ui.checkbox(
                     &mut view_state.zone_selection.pending_use_custom_preprocessing,
@@ -411,7 +471,9 @@ fn render_zone_settings_dialog(ui: &mut egui::Ui, view_state: &mut VisionViewSta
                     if ui.button("Save").clicked() {
                         if let Some(idx) = view_state.zone_selection.settings_zone_index {
                             if let Some(zone) = view_state.ocr_zones.get_mut(idx) {
-                                // Apply the settings
+                                // Apply content type
+                                zone.content_type = view_state.zone_selection.pending_content_type.clone();
+                                // Apply preprocessing settings
                                 if view_state.zone_selection.pending_use_custom_preprocessing {
                                     zone.preprocessing = Some(view_state.zone_selection.pending_preprocessing.clone());
                                 } else {
