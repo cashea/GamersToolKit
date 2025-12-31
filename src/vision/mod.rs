@@ -8,8 +8,11 @@
 pub mod detection;
 pub mod models;
 pub mod ocr;
+pub mod ocr_preprocess;
 pub mod preprocess;
 pub mod windows_ocr;
+
+pub use ocr_preprocess::{PreprocessResult, apply_preprocessing_with_scale};
 
 use anyhow::Result;
 use std::time::Instant;
@@ -19,16 +22,28 @@ use crate::capture::frame::CapturedFrame;
 
 pub use models::{ModelManager, ModelType, OnnxSession};
 pub use ocr::{OcrEngine, OcrResult};
-pub use windows_ocr::{WindowsOcr, WindowsOcrResult};
+pub use windows_ocr::{WindowsOcr, WindowsOcrResult, WindowsOcrLine, WindowsOcrFullResult};
 
 /// OCR backend selection
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum OcrBackend {
     /// Windows built-in OCR (recommended for game text)
     #[default]
     WindowsOcr,
     /// PaddleOCR via ONNX Runtime
     PaddleOcr,
+}
+
+/// OCR result granularity
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OcrGranularity {
+    /// Individual words with their bounding boxes
+    #[default]
+    Word,
+    /// Full lines with their bounding boxes
+    Line,
 }
 
 /// Detected text region from OCR
@@ -188,17 +203,31 @@ impl VisionPipeline {
 
     /// Process a captured frame and extract text/visual elements
     pub fn process(&mut self, frame: &CapturedFrame) -> Result<VisionResult> {
+        self.process_with_granularity(frame, OcrGranularity::Word)
+    }
+
+    /// Process a captured frame with specified granularity (word or line level)
+    pub fn process_with_granularity(&mut self, frame: &CapturedFrame, granularity: OcrGranularity) -> Result<VisionResult> {
         let start = Instant::now();
 
         let text_regions = match self.config.backend {
-            OcrBackend::WindowsOcr => self.process_windows_ocr(&frame.data, frame.width, frame.height)?,
-            OcrBackend::PaddleOcr => self.process_paddle_ocr(&frame.data, frame.width, frame.height)?,
+            OcrBackend::WindowsOcr => {
+                match granularity {
+                    OcrGranularity::Word => self.process_windows_ocr(&frame.data, frame.width, frame.height)?,
+                    OcrGranularity::Line => self.process_windows_ocr_lines(&frame.data, frame.width, frame.height)?,
+                }
+            }
+            OcrBackend::PaddleOcr => {
+                // PaddleOCR already returns line-level results, so we use the same for both
+                self.process_paddle_ocr(&frame.data, frame.width, frame.height)?
+            }
         };
 
         let processing_time = start.elapsed();
         debug!(
-            "Vision processing ({:?}) complete in {:?}: {} text regions",
+            "Vision processing ({:?}, {:?}) complete in {:?}: {} text regions",
             self.config.backend,
+            granularity,
             processing_time,
             text_regions.len()
         );
@@ -210,7 +239,7 @@ impl VisionPipeline {
         })
     }
 
-    /// Process using Windows OCR
+    /// Process using Windows OCR (word-level)
     fn process_windows_ocr(&self, data: &[u8], width: u32, height: u32) -> Result<Vec<TextRegion>> {
         let Some(ocr) = &self.windows_ocr else {
             return Ok(vec![]);
@@ -225,6 +254,24 @@ impl VisionPipeline {
                 text: r.text,
                 bounds: r.bounds,
                 confidence: r.confidence,
+            })
+            .collect())
+    }
+
+    /// Process using Windows OCR (line-level)
+    fn process_windows_ocr_lines(&self, data: &[u8], width: u32, height: u32) -> Result<Vec<TextRegion>> {
+        let Some(ocr) = &self.windows_ocr else {
+            return Ok(vec![]);
+        };
+
+        let full_result = ocr.recognize_full(data, width, height)?;
+
+        Ok(full_result.lines
+            .into_iter()
+            .map(|line| TextRegion {
+                text: line.text,
+                bounds: line.bounds,
+                confidence: 1.0, // Windows OCR doesn't provide line-level confidence
             })
             .collect())
     }

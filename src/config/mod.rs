@@ -17,6 +17,12 @@ pub struct AppConfig {
     pub overlay: OverlaySettings,
     /// Performance settings
     pub performance: PerformanceConfig,
+    /// Vision/OCR settings
+    #[serde(default)]
+    pub vision: VisionSettings,
+    /// Dashboard UI settings
+    #[serde(default)]
+    pub dashboard: DashboardSettings,
 }
 
 impl Default for AppConfig {
@@ -26,6 +32,8 @@ impl Default for AppConfig {
             capture: CaptureSettings::default(),
             overlay: OverlaySettings::default(),
             performance: PerformanceConfig::default(),
+            vision: VisionSettings::default(),
+            dashboard: DashboardSettings::default(),
         }
     }
 }
@@ -203,6 +211,128 @@ impl Default for PerformanceConfig {
             max_cpu_percent: 10,
             max_memory_mb: 512,
             idle_optimization: true,
+        }
+    }
+}
+
+/// Vision/OCR settings
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VisionSettings {
+    /// Selected OCR backend
+    #[serde(default)]
+    pub backend: crate::vision::OcrBackend,
+    /// OCR granularity (word vs line level)
+    #[serde(default)]
+    pub granularity: crate::vision::OcrGranularity,
+    /// Match threshold for fuzzy text matching (0.0 - 1.0)
+    /// Used to match OCR text against labeled regions
+    #[serde(default = "default_match_threshold", alias = "confidence_threshold")]
+    pub match_threshold: f32,
+    /// Show bounding boxes on preview
+    #[serde(default = "default_show_bounding_boxes")]
+    pub show_bounding_boxes: bool,
+    /// Auto-run OCR on new frames
+    #[serde(default)]
+    pub auto_run_ocr: bool,
+    /// Image preprocessing settings for OCR
+    #[serde(default)]
+    pub preprocessing: OcrPreprocessing,
+}
+
+/// Image preprocessing options for OCR
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OcrPreprocessing {
+    /// Enable preprocessing (master toggle)
+    #[serde(default)]
+    pub enabled: bool,
+    /// Grayscale conversion before OCR
+    #[serde(default)]
+    pub grayscale: bool,
+    /// Contrast enhancement factor (1.0 = no change, >1.0 = more contrast)
+    #[serde(default = "default_contrast")]
+    pub contrast: f32,
+    /// Sharpening strength (0.0 = none, 1.0 = strong)
+    #[serde(default)]
+    pub sharpen: f32,
+    /// Invert colors (useful for light text on dark backgrounds)
+    #[serde(default)]
+    pub invert: bool,
+    /// Upscale factor for small text (1 = no scaling, 2-4 recommended for small text)
+    #[serde(default = "default_scale")]
+    pub scale: u32,
+}
+
+fn default_contrast() -> f32 {
+    1.0
+}
+
+fn default_scale() -> u32 {
+    1
+}
+
+impl Default for OcrPreprocessing {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            grayscale: false,
+            contrast: 1.0,
+            sharpen: 0.0,
+            invert: false,
+            scale: 1,
+        }
+    }
+}
+
+fn default_match_threshold() -> f32 {
+    0.8
+}
+
+fn default_show_bounding_boxes() -> bool {
+    true
+}
+
+impl Default for VisionSettings {
+    fn default() -> Self {
+        Self {
+            backend: crate::vision::OcrBackend::default(),
+            granularity: crate::vision::OcrGranularity::default(),
+            match_threshold: default_match_threshold(),
+            show_bounding_boxes: default_show_bounding_boxes(),
+            auto_run_ocr: false,
+            preprocessing: OcrPreprocessing::default(),
+        }
+    }
+}
+
+/// Dashboard UI settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DashboardSettings {
+    /// Last active view
+    #[serde(default)]
+    pub last_view: DashboardViewSetting,
+    /// Last active profile ID
+    #[serde(default)]
+    pub active_profile_id: Option<String>,
+}
+
+/// Dashboard view for persistence (mirrors DashboardView enum)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DashboardViewSetting {
+    #[default]
+    Home,
+    Capture,
+    Overlay,
+    Vision,
+    Profiles,
+    Settings,
+}
+
+impl Default for DashboardSettings {
+    fn default() -> Self {
+        Self {
+            last_view: DashboardViewSetting::default(),
+            active_profile_id: Some("default".to_string()),
         }
     }
 }

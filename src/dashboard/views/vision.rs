@@ -201,17 +201,31 @@ fn render_preview_panel(
 
             ui.add_space(6.0);
 
-            // Preview area - use remaining height
+            // Preview area - maintain aspect ratio of captured frame
             let available = ui.available_size();
-            let preview_height = (available.y - 30.0).max(100.0);
-            let preview_size = egui::vec2(available.x - 4.0, preview_height);
+            let preview_width = available.x - 4.0;
+
+            // Calculate height based on frame aspect ratio, or use 16:9 default
+            let aspect_ratio = if view_state.last_frame_width > 0 && view_state.last_frame_height > 0 {
+                view_state.last_frame_width as f32 / view_state.last_frame_height as f32
+            } else {
+                16.0 / 9.0 // Default to 16:9
+            };
+
+            // Height based on aspect ratio, but cap at reasonable max
+            let max_preview_height = (available.y - 150.0).max(100.0); // Reserve space for controls
+            let aspect_height = preview_width / aspect_ratio;
+            let preview_height = aspect_height.min(max_preview_height);
+            let preview_size = egui::vec2(preview_width, preview_height);
 
             egui::Frame::none()
                 .fill(ThemeColors::BG_DARK)
                 .rounding(egui::Rounding::same(4.0))
                 .show(ui, |ui| {
                     ui.set_min_size(preview_size);
+                    ui.set_max_size(preview_size);
 
+                    // Update texture if a new frame arrived
                     if let Some(frame) = preview_frame {
                         view_state.last_frame_data = Some(frame.data.clone());
                         view_state.last_frame_width = frame.width;
@@ -238,48 +252,51 @@ fn render_preview_panel(
                         } else if let Some(ref mut texture) = view_state.preview_texture {
                             texture.set(color_image, egui::TextureOptions::LINEAR);
                         }
+                    }
 
-                        if let Some(ref texture) = view_state.preview_texture {
-                            let tex_size = texture.size_vec2();
-                            let scale = (preview_size.x / tex_size.x).min(preview_size.y / tex_size.y);
-                            let scaled_size = tex_size * scale;
-                            let offset_x = (preview_size.x - scaled_size.x) / 2.0;
-                            let offset_y = (preview_size.y - scaled_size.y) / 2.0;
+                    // Display the texture if we have one (persists between frames)
+                    if let Some(ref texture) = view_state.preview_texture {
+                        let tex_size = texture.size_vec2();
+                        let scale = (preview_size.x / tex_size.x).min(preview_size.y / tex_size.y);
+                        let scaled_size = tex_size * scale;
+                        let offset_x = (preview_size.x - scaled_size.x) / 2.0;
+                        let offset_y = (preview_size.y - scaled_size.y) / 2.0;
 
-                            let (rect, _) = ui.allocate_exact_size(preview_size, egui::Sense::hover());
-                            let image_rect = egui::Rect::from_min_size(
-                                rect.min + egui::vec2(offset_x, offset_y),
-                                scaled_size,
-                            );
-                            ui.painter().image(
-                                texture.id(),
-                                image_rect,
-                                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                                egui::Color32::WHITE,
-                            );
+                        let (rect, _) = ui.allocate_exact_size(preview_size, egui::Sense::hover());
+                        let image_rect = egui::Rect::from_min_size(
+                            rect.min + egui::vec2(offset_x, offset_y),
+                            scaled_size,
+                        );
+                        ui.painter().image(
+                            texture.id(),
+                            image_rect,
+                            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                            egui::Color32::WHITE,
+                        );
 
-                            if view_state.show_bounding_boxes {
-                                let scale_x = scaled_size.x / frame.width as f32;
-                                let scale_y = scaled_size.y / frame.height as f32;
-                                for detection in &view_state.last_ocr_results {
-                                    let (x, y, w, h) = detection.bounds;
-                                    let box_rect = egui::Rect::from_min_size(
-                                        image_rect.min + egui::vec2(x as f32 * scale_x, y as f32 * scale_y),
-                                        egui::vec2(w as f32 * scale_x, h as f32 * scale_y),
-                                    );
-                                    ui.painter().rect_stroke(
-                                        box_rect,
-                                        egui::Rounding::ZERO,
-                                        egui::Stroke::new(1.5, ThemeColors::ACCENT_PRIMARY),
-                                    );
-                                }
+                        // Draw bounding boxes using stored frame dimensions
+                        if view_state.show_bounding_boxes && view_state.last_frame_width > 0 {
+                            let scale_x = scaled_size.x / view_state.last_frame_width as f32;
+                            let scale_y = scaled_size.y / view_state.last_frame_height as f32;
+                            for detection in &view_state.last_ocr_results {
+                                let (x, y, w, h) = detection.bounds;
+                                let box_rect = egui::Rect::from_min_size(
+                                    image_rect.min + egui::vec2(x as f32 * scale_x, y as f32 * scale_y),
+                                    egui::vec2(w as f32 * scale_x, h as f32 * scale_y),
+                                );
+                                ui.painter().rect_stroke(
+                                    box_rect,
+                                    egui::Rounding::ZERO,
+                                    egui::Stroke::new(1.5, ThemeColors::ACCENT_PRIMARY),
+                                );
                             }
                         }
                     } else {
+                        // No texture yet - show placeholder
                         ui.centered_and_justified(|ui| {
                             let is_capturing = shared_state.read().runtime.is_capturing;
                             let message = if is_capturing {
-                                "Waiting for frame..."
+                                "Waiting for first frame..."
                             } else {
                                 "Start capture first"
                             };
@@ -295,6 +312,74 @@ fn render_preview_panel(
                     ui.label(RichText::new(format!("{}ms", view_state.last_processing_time_ms)).size(14.0).color(ThemeColors::TEXT_MUTED));
                 }
             });
+
+            // Preprocessing controls (collapsible)
+            ui.add_space(4.0);
+            egui::CollapsingHeader::new(RichText::new("Preprocessing").size(14.0))
+                .default_open(view_state.preprocessing.enabled)
+                .show(ui, |ui| {
+                    // Track if any setting changed to trigger OCR re-run
+                    let mut settings_changed = false;
+
+                    ui.horizontal(|ui| {
+                        let enabled_checkbox = ui.checkbox(&mut view_state.preprocessing.enabled, "Enable");
+                        if enabled_checkbox.changed() {
+                            settings_changed = true;
+                        }
+                        enabled_checkbox.on_hover_text("Apply image filters before OCR to improve accuracy");
+                    });
+
+                    ui.add_enabled_ui(view_state.preprocessing.enabled, |ui| {
+                        ui.horizontal(|ui| {
+                            if ui.checkbox(&mut view_state.preprocessing.grayscale, "Grayscale").changed() {
+                                settings_changed = true;
+                            }
+                            if ui.checkbox(&mut view_state.preprocessing.invert, "Invert").changed() {
+                                settings_changed = true;
+                            }
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Contrast:").size(13.0));
+                            if ui.add(egui::Slider::new(&mut view_state.preprocessing.contrast, 0.5..=3.0)
+                                .step_by(0.1)
+                                .fixed_decimals(1)).changed() {
+                                settings_changed = true;
+                            }
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Sharpen:").size(13.0));
+                            if ui.add(egui::Slider::new(&mut view_state.preprocessing.sharpen, 0.0..=1.0)
+                                .step_by(0.1)
+                                .fixed_decimals(1)).changed() {
+                                settings_changed = true;
+                            }
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Scale:").size(13.0));
+                            let scale_slider = ui.add(egui::Slider::new(&mut view_state.preprocessing.scale, 1..=4)
+                                .step_by(1.0)
+                                .suffix("x"));
+                            if scale_slider.changed() {
+                                settings_changed = true;
+                            }
+                            scale_slider.on_hover_text("Upscale image before OCR (2-3x recommended for small text)");
+                        });
+                    });
+
+                    // Auto-trigger OCR when preprocessing settings change
+                    if settings_changed && !view_state.is_processing {
+                        let backend_ready = match view_state.selected_backend {
+                            OcrBackend::WindowsOcr => view_state.windows_ocr_initialized,
+                            OcrBackend::PaddleOcr => view_state.ocr_initialized,
+                        };
+                        if backend_ready && view_state.last_frame_data.is_some() {
+                            view_state.pending_ocr_run = true;
+                        }
+                    }
+                });
         });
 }
 
@@ -315,26 +400,14 @@ fn render_results_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, max
 
             ui.add_space(4.0);
 
-            // Confidence slider (compact)
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Min:").size(14.0));
-                ui.add(egui::Slider::new(&mut view_state.confidence_threshold, 0.0..=1.0)
-                    .step_by(0.05)
-                    .fixed_decimals(2)
-                    .show_value(true));
-            });
-
-            ui.add_space(4.0);
-
             // Results list with scroll
-            let scroll_height = (max_height - 70.0).max(50.0);
+            let scroll_height = (max_height - 50.0).max(50.0);
             egui::ScrollArea::vertical()
                 .max_height(scroll_height)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     let filtered_results: Vec<_> = view_state.last_ocr_results
                         .iter()
-                        .filter(|r| r.confidence >= view_state.confidence_threshold)
                         .collect();
 
                     if filtered_results.is_empty() {
@@ -348,9 +421,8 @@ fn render_results_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, max
                                 .show(ui, |ui| {
                                     ui.horizontal(|ui| {
                                         ui.label(RichText::new(format!("#{}", idx + 1)).size(14.0).color(ThemeColors::ACCENT_PRIMARY).strong());
-                                        ui.label(RichText::new(format!("{:.0}%", result.confidence * 100.0)).size(13.0).color(confidence_color(result.confidence)));
+                                        ui.label(RichText::new(&result.text).size(14.0));
                                     });
-                                    ui.label(RichText::new(&result.text).size(14.0));
                                 });
                             ui.add_space(2.0);
                         }
@@ -386,6 +458,24 @@ fn render_labeling_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, ma
 
             ui.add_space(4.0);
 
+            // Match threshold slider with tooltip
+            let threshold_changed = ui.horizontal(|ui| {
+                ui.label(RichText::new("Match:").size(14.0));
+                let slider = ui.add(egui::Slider::new(&mut view_state.match_threshold, 0.5..=1.0)
+                    .step_by(0.05)
+                    .fixed_decimals(0)
+                    .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
+                    .custom_parser(|s| s.trim_end_matches('%').parse::<f64>().ok().map(|v| v / 100.0)));
+                let changed = slider.changed();
+                slider.on_hover_text("Fuzzy match threshold: how similar OCR text must be to match labels");
+                changed
+            }).inner;
+            if threshold_changed {
+                update_matching_regions(view_state);
+            }
+
+            ui.add_space(4.0);
+
             // Search input
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Find:").size(14.0));
@@ -407,7 +497,7 @@ fn render_labeling_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, ma
             ui.add_space(4.0);
 
             // Calculate remaining height for the two sections
-            let remaining_height = (max_height - 80.0).max(100.0);
+            let remaining_height = (max_height - 110.0).max(100.0);
             let section_height = remaining_height / 2.0;
 
             // Matching regions section
@@ -566,30 +656,43 @@ fn render_labeling_panel(ui: &mut egui::Ui, view_state: &mut VisionViewState, ma
         });
 }
 
-/// Update the matching regions based on search text
+/// Update the matching regions based on search text using fuzzy matching
 fn update_matching_regions(view_state: &mut VisionViewState) {
+    use crate::dashboard::state::fuzzy_text_similarity;
+
     view_state.matching_regions.clear();
     view_state.selected_region_index = None;
 
-    let search = view_state.region_search_text.to_lowercase();
+    let search = view_state.region_search_text.trim();
     if search.is_empty() {
         return;
     }
 
+    let threshold = view_state.match_threshold;
+
+    // Collect matches with their similarity scores for sorting
+    let mut matches: Vec<(usize, f32)> = Vec::new();
+
     for (idx, result) in view_state.last_ocr_results.iter().enumerate() {
-        if result.text.to_lowercase().contains(&search) {
-            view_state.matching_regions.push(idx);
+        // Check both exact substring match and fuzzy match
+        let search_lower = search.to_lowercase();
+        let result_lower = result.text.to_lowercase();
+
+        // Exact substring match always passes
+        if result_lower.contains(&search_lower) {
+            matches.push((idx, 1.0));
+        } else {
+            // Fuzzy match for OCR errors (e.g., "Hea1th" vs "Health")
+            let similarity = fuzzy_text_similarity(search, &result.text);
+            if similarity >= threshold {
+                matches.push((idx, similarity));
+            }
         }
     }
-}
 
-/// Get color based on confidence level
-fn confidence_color(confidence: f32) -> egui::Color32 {
-    if confidence >= 0.9 {
-        ThemeColors::ACCENT_SUCCESS
-    } else if confidence >= 0.7 {
-        ThemeColors::ACCENT_WARNING
-    } else {
-        ThemeColors::ACCENT_ERROR
-    }
+    // Sort by similarity score (highest first)
+    matches.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Extract just the indices
+    view_state.matching_regions = matches.into_iter().map(|(idx, _)| idx).collect();
 }

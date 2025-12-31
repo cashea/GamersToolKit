@@ -5,6 +5,7 @@ use parking_lot::{Mutex, RwLock};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::sync::mpsc::{self, Receiver, Sender};
 
 use crate::analysis::Tip;
 use crate::capture::{CaptureTarget, ScreenCapture};
@@ -23,6 +24,15 @@ use crate::storage::profiles::GameProfile;
 use crate::vision::{VisionPipeline, ModelManager, ModelType, OcrGranularity};
 use crate::dashboard::state::OcrResultDisplay;
 use std::thread::JoinHandle;
+
+/// Preprocessed data from background thread, ready for OCR
+struct PreprocessedFrame {
+    data: Vec<u8>,
+    width: u32,
+    height: u32,
+    scale_factor: u32,
+    start_time: Instant,
+}
 
 /// The main dashboard application
 pub struct DashboardApp {
@@ -64,6 +74,12 @@ pub struct DashboardApp {
     active_profile: Option<GameProfile>,
     /// Last time profile labels were auto-saved
     last_profile_save: Instant,
+    /// Last synced vision settings (for change detection)
+    last_synced_vision: Option<crate::config::VisionSettings>,
+    /// Last synced dashboard view (for change detection)
+    last_synced_view: Option<DashboardView>,
+    /// Channel to receive preprocessed frames from background thread
+    preprocess_rx: Option<Receiver<PreprocessedFrame>>,
 }
 
 /// Helper for calculating FPS
@@ -109,12 +125,43 @@ impl DashboardApp {
         // Initialize model manager
         let model_manager = ModelManager::new().ok();
 
-        // Load or create default profile
-        let (active_profile, initial_labels) = Self::load_or_create_default_profile(&profiles_dir);
+        // Load persisted settings from shared state config
+        let (vision_settings, dashboard_settings) = {
+            let state = shared_state.read();
+            (state.config.vision.clone(), state.config.dashboard.clone())
+        };
+
+        // Load or create profile based on saved active_profile_id
+        let (active_profile, initial_labels) = Self::load_profile_by_id(
+            &profiles_dir,
+            dashboard_settings.active_profile_id.as_deref(),
+        );
 
         let mut dashboard_state = DashboardState::default();
+
+        // Restore persisted dashboard view
+        dashboard_state.current_view = DashboardView::from_setting(dashboard_settings.last_view);
+
+        // Restore persisted vision settings
+        dashboard_state.vision.selected_backend = vision_settings.backend;
+        dashboard_state.vision.ocr_granularity = match vision_settings.granularity {
+            crate::vision::OcrGranularity::Word => crate::dashboard::state::OcrGranularity::Word,
+            crate::vision::OcrGranularity::Line => crate::dashboard::state::OcrGranularity::Line,
+        };
+        dashboard_state.vision.match_threshold = vision_settings.match_threshold;
+        dashboard_state.vision.show_bounding_boxes = vision_settings.show_bounding_boxes;
+        dashboard_state.vision.auto_run_ocr = vision_settings.auto_run_ocr;
+        dashboard_state.vision.preprocessing = vision_settings.preprocessing.clone();
+
         // Load labels from profile into vision state
         dashboard_state.vision.labeled_regions = initial_labels;
+
+        tracing::info!(
+            "Restored settings: view={:?}, backend={:?}, granularity={:?}",
+            dashboard_state.current_view,
+            dashboard_state.vision.selected_backend,
+            dashboard_state.vision.ocr_granularity
+        );
 
         Self {
             shared_state,
@@ -136,20 +183,53 @@ impl DashboardApp {
             profiles_dir,
             active_profile,
             last_profile_save: Instant::now(),
+            last_synced_vision: Some(vision_settings),
+            last_synced_view: Some(DashboardView::from_setting(dashboard_settings.last_view)),
+            preprocess_rx: None,
         }
     }
 
-    /// Load or create the default profile
-    fn load_or_create_default_profile(
+    /// Load a profile by ID, or create default if not found
+    fn load_profile_by_id(
         profiles_dir: &Option<PathBuf>,
+        profile_id: Option<&str>,
     ) -> (Option<GameProfile>, Vec<crate::storage::profiles::LabeledRegion>) {
-        if let Some(ref dir) = profiles_dir {
+        let Some(ref dir) = profiles_dir else {
+            return (None, vec![]);
+        };
+
+        // Try to load the requested profile
+        let profile_id = profile_id.unwrap_or("default");
+        let profile_path = dir.join(format!("{}.json", profile_id));
+
+        if profile_path.exists() {
+            match crate::storage::profiles::load_profile(&profile_path) {
+                Ok(profile) => {
+                    let labels = profile.labeled_regions.clone();
+                    tracing::info!(
+                        "Loaded profile '{}' with {} labels",
+                        profile.name,
+                        labels.len()
+                    );
+                    return (Some(profile), labels);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to load profile '{}': {}", profile_id, e);
+                }
+            }
+        }
+
+        // Fall back to default profile if requested profile wasn't found
+        if profile_id != "default" {
             let default_path = dir.join("default.json");
             if default_path.exists() {
                 match crate::storage::profiles::load_profile(&default_path) {
                     Ok(profile) => {
                         let labels = profile.labeled_regions.clone();
-                        tracing::info!("Loaded default profile with {} labels", labels.len());
+                        tracing::info!(
+                            "Loaded fallback default profile with {} labels",
+                            labels.len()
+                        );
                         return (Some(profile), labels);
                     }
                     Err(e) => {
@@ -157,30 +237,28 @@ impl DashboardApp {
                     }
                 }
             }
-
-            // Create a new default profile
-            let profile = GameProfile {
-                id: "default".to_string(),
-                name: "Default Profile".to_string(),
-                executables: vec![],
-                version: "1.0.0".to_string(),
-                ocr_regions: vec![],
-                templates: vec![],
-                rules: vec![],
-                labeled_regions: vec![],
-            };
-
-            // Save the new default profile
-            if let Err(e) = crate::storage::profiles::save_profile(&profile, &default_path) {
-                tracing::warn!("Failed to save default profile: {}", e);
-            } else {
-                tracing::info!("Created new default profile");
-            }
-
-            (Some(profile), vec![])
-        } else {
-            (None, vec![])
         }
+
+        // Create a new default profile
+        let profile = GameProfile {
+            id: "default".to_string(),
+            name: "Default Profile".to_string(),
+            executables: vec![],
+            version: "1.0.0".to_string(),
+            ocr_regions: vec![],
+            templates: vec![],
+            rules: vec![],
+            labeled_regions: vec![],
+        };
+
+        let default_path = dir.join("default.json");
+        if let Err(e) = crate::storage::profiles::save_profile(&profile, &default_path) {
+            tracing::warn!("Failed to save default profile: {}", e);
+        } else {
+            tracing::info!("Created new default profile");
+        }
+
+        (Some(profile), vec![])
     }
 
     /// Start screen capture
@@ -346,7 +424,10 @@ impl DashboardApp {
             }
             tracing::info!("Restored window state from previous session");
         } else {
-            viewport = viewport.with_inner_size([1100.0, 700.0]);
+            // Default to maximized on first run
+            viewport = viewport
+                .with_inner_size([1100.0, 700.0])
+                .with_maximized(true);
         }
 
         eframe::NativeOptions {
@@ -472,6 +553,71 @@ impl DashboardApp {
             }
         }
     }
+
+    /// Sync dashboard and vision state to config (for auto-save)
+    /// Returns true if any changes were detected
+    fn sync_dashboard_state_to_config(&mut self) {
+        // Build current vision settings from dashboard state
+        let current_vision = crate::config::VisionSettings {
+            backend: self.dashboard_state.vision.selected_backend,
+            granularity: match self.dashboard_state.vision.ocr_granularity {
+                crate::dashboard::state::OcrGranularity::Word => crate::vision::OcrGranularity::Word,
+                crate::dashboard::state::OcrGranularity::Line => crate::vision::OcrGranularity::Line,
+            },
+            match_threshold: self.dashboard_state.vision.match_threshold,
+            show_bounding_boxes: self.dashboard_state.vision.show_bounding_boxes,
+            auto_run_ocr: self.dashboard_state.vision.auto_run_ocr,
+            preprocessing: self.dashboard_state.vision.preprocessing.clone(),
+        };
+
+        let current_view = self.dashboard_state.current_view;
+
+        // Check for vision settings changes
+        let vision_changed = match &self.last_synced_vision {
+            Some(last) => {
+                last.backend != current_vision.backend
+                    || last.granularity != current_vision.granularity
+                    || (last.match_threshold - current_vision.match_threshold).abs() > 0.001
+                    || last.show_bounding_boxes != current_vision.show_bounding_boxes
+                    || last.auto_run_ocr != current_vision.auto_run_ocr
+                    || last.preprocessing != current_vision.preprocessing
+            }
+            None => true,
+        };
+
+        // Check for view changes
+        let view_changed = match &self.last_synced_view {
+            Some(last) => *last != current_view,
+            None => true,
+        };
+
+        if vision_changed || view_changed {
+            let mut state = self.shared_state.write();
+
+            // Sync vision settings
+            state.config.vision = current_vision.clone();
+
+            // Sync dashboard settings
+            state.config.dashboard.last_view = current_view.to_setting();
+
+            // Sync active profile ID
+            if let Some(ref profile) = self.active_profile {
+                state.config.dashboard.active_profile_id = Some(profile.id.clone());
+            }
+
+            drop(state);
+
+            // Update tracking state
+            self.last_synced_vision = Some(current_vision);
+            self.last_synced_view = Some(current_view);
+
+            // Mark for auto-save
+            self.pending_save = true;
+            self.last_auto_save = Instant::now();
+
+            tracing::debug!("Dashboard state changed, marked for save");
+        }
+    }
 }
 
 impl eframe::App for DashboardApp {
@@ -499,6 +645,9 @@ impl eframe::App for DashboardApp {
 
         // Check if overlay thread has stopped
         self.check_overlay_status();
+
+        // Sync dashboard/vision state to config before saving
+        self.sync_dashboard_state_to_config();
 
         // Auto-save settings if needed
         self.auto_save_settings();
@@ -834,6 +983,61 @@ impl DashboardApp {
             self.vision_pipeline = Some(pipeline);
         }
 
+        // Check for preprocessed frame results from background thread
+        if let Some(ref rx) = self.preprocess_rx {
+            if let Ok(preprocessed) = rx.try_recv() {
+                // Preprocessing done, now run OCR on main thread (Windows OCR is fast)
+                if let Some(ref mut pipeline) = self.vision_pipeline {
+                    pipeline.set_backend(vision_state.selected_backend);
+
+                    let frame = crate::capture::frame::CapturedFrame::new(
+                        preprocessed.data,
+                        preprocessed.width,
+                        preprocessed.height,
+                    );
+
+                    let granularity = match vision_state.ocr_granularity {
+                        crate::dashboard::state::OcrGranularity::Word => OcrGranularity::Word,
+                        crate::dashboard::state::OcrGranularity::Line => OcrGranularity::Line,
+                    };
+
+                    match pipeline.process_with_granularity(&frame, granularity) {
+                        Ok(result) => {
+                            vision_state.last_ocr_results = result.text_regions
+                                .into_iter()
+                                .map(|r| {
+                                    let bounds = if preprocessed.scale_factor > 1 {
+                                        (
+                                            r.bounds.0 / preprocessed.scale_factor,
+                                            r.bounds.1 / preprocessed.scale_factor,
+                                            r.bounds.2 / preprocessed.scale_factor,
+                                            r.bounds.3 / preprocessed.scale_factor,
+                                        )
+                                    } else {
+                                        r.bounds
+                                    };
+                                    OcrResultDisplay {
+                                        text: r.text,
+                                        bounds,
+                                        confidence: r.confidence,
+                                    }
+                                })
+                                .collect();
+                            vision_state.last_processing_time_ms = preprocessed.start_time.elapsed().as_millis() as u64;
+                            vision_state.last_error = None;
+                            vision_state.update_labels_from_ocr();
+                        }
+                        Err(e) => {
+                            vision_state.last_error = Some(format!("OCR failed: {}", e));
+                            tracing::error!("OCR processing failed: {}", e);
+                        }
+                    }
+                }
+                vision_state.is_processing = false;
+                self.preprocess_rx = None;
+            }
+        }
+
         // Handle OCR run request (manual or auto)
         let backend_ready = match vision_state.selected_backend {
             OcrBackend::WindowsOcr => vision_state.windows_ocr_initialized,
@@ -842,59 +1046,48 @@ impl DashboardApp {
         let should_run_ocr = vision_state.pending_ocr_run
             || (vision_state.auto_run_ocr && vision_state.last_frame_data.is_some());
 
+        // Only start new OCR if not already processing
         if should_run_ocr && backend_ready && self.vision_pipeline.is_some() && !vision_state.is_processing {
             vision_state.pending_ocr_run = false;
 
-            if let Some(ref frame_data) = vision_state.last_frame_data.clone() {
+            if let Some(frame_data) = vision_state.last_frame_data.take() {
                 let width = vision_state.last_frame_width;
                 let height = vision_state.last_frame_height;
 
                 if width > 0 && height > 0 {
                     vision_state.is_processing = true;
-                    let start = Instant::now();
 
-                    if let Some(ref mut pipeline) = self.vision_pipeline {
-                        // Ensure pipeline is using the selected backend
-                        pipeline.set_backend(vision_state.selected_backend);
+                    // Clone preprocessing settings for the thread
+                    let preprocessing = vision_state.preprocessing.clone();
+                    let scale_factor = if preprocessing.enabled && preprocessing.scale > 1 {
+                        preprocessing.scale
+                    } else {
+                        1
+                    };
 
-                        // Create a CapturedFrame for processing
-                        let frame = crate::capture::frame::CapturedFrame::new(
-                            frame_data.clone(),
+                    // Create channel for result
+                    let (tx, rx) = mpsc::channel();
+                    self.preprocess_rx = Some(rx);
+
+                    // Spawn background thread for preprocessing (the slow part)
+                    std::thread::spawn(move || {
+                        let start_time = Instant::now();
+
+                        let preprocess_result = crate::vision::ocr_preprocess::apply_preprocessing_with_scale(
+                            &frame_data,
                             width,
                             height,
+                            &preprocessing,
                         );
 
-                        // Convert dashboard granularity to vision granularity
-                        let granularity = match vision_state.ocr_granularity {
-                            crate::dashboard::state::OcrGranularity::Word => OcrGranularity::Word,
-                            crate::dashboard::state::OcrGranularity::Line => OcrGranularity::Line,
-                        };
-
-                        match pipeline.process_with_granularity(&frame, granularity) {
-                            Ok(result) => {
-                                // Convert results to display format
-                                vision_state.last_ocr_results = result.text_regions
-                                    .into_iter()
-                                    .map(|r| OcrResultDisplay {
-                                        text: r.text,
-                                        bounds: r.bounds,
-                                        confidence: r.confidence,
-                                    })
-                                    .collect();
-                                vision_state.last_processing_time_ms = start.elapsed().as_millis() as u64;
-                                vision_state.last_error = None;
-
-                                // Update labeled regions with current OCR results
-                                vision_state.update_labels_from_ocr();
-                            }
-                            Err(e) => {
-                                vision_state.last_error = Some(format!("OCR failed: {}", e));
-                                tracing::error!("OCR processing failed: {}", e);
-                            }
-                        }
-                    }
-
-                    vision_state.is_processing = false;
+                        let _ = tx.send(PreprocessedFrame {
+                            data: preprocess_result.data,
+                            width: preprocess_result.width,
+                            height: preprocess_result.height,
+                            scale_factor,
+                            start_time,
+                        });
+                    });
                 }
             }
         }
