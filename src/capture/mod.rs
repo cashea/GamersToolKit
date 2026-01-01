@@ -318,3 +318,76 @@ fn run_capture(
 
     Ok(())
 }
+
+/// Bring a window to the foreground by title (partial match)
+///
+/// Uses Windows API to find the window and set it as the foreground window.
+/// Returns true if successful, false if window not found or operation failed.
+pub fn bring_window_to_front(title: &str) -> bool {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindowTextW, SetForegroundWindow, ShowWindow, SW_RESTORE,
+        IsIconic,
+    };
+    use std::sync::Mutex;
+
+    // Thread-safe storage for the found window handle
+    static FOUND_HWND: Mutex<Option<isize>> = Mutex::new(None);
+
+    let title_lower = title.to_lowercase();
+
+    // Reset the found handle
+    *FOUND_HWND.lock().unwrap() = None;
+
+    // Store title in thread-local for the callback
+    thread_local! {
+        static SEARCH_TITLE: std::cell::RefCell<String> = std::cell::RefCell::new(String::new());
+    }
+    SEARCH_TITLE.with(|t| *t.borrow_mut() = title_lower.clone());
+
+    unsafe extern "system" fn enum_callback(hwnd: HWND, _: windows::Win32::Foundation::LPARAM) -> windows::Win32::Foundation::BOOL {
+        let mut buffer = [0u16; 512];
+        let len = GetWindowTextW(hwnd, &mut buffer);
+        if len > 0 {
+            let window_title = String::from_utf16_lossy(&buffer[..len as usize]).to_lowercase();
+
+            SEARCH_TITLE.with(|t| {
+                if window_title.contains(&*t.borrow()) {
+                    *FOUND_HWND.lock().unwrap() = Some(hwnd.0 as isize);
+                    return;
+                }
+            });
+
+            // Check if we found it
+            if FOUND_HWND.lock().unwrap().is_some() {
+                return windows::Win32::Foundation::FALSE; // Stop enumeration
+            }
+        }
+        windows::Win32::Foundation::TRUE // Continue enumeration
+    }
+
+    unsafe {
+        let _ = EnumWindows(Some(enum_callback), windows::Win32::Foundation::LPARAM(0));
+
+        if let Some(hwnd_val) = *FOUND_HWND.lock().unwrap() {
+            let hwnd = HWND(hwnd_val as *mut std::ffi::c_void);
+
+            // Restore window if minimized
+            if IsIconic(hwnd).as_bool() {
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+            }
+
+            // Bring to foreground
+            if SetForegroundWindow(hwnd).as_bool() {
+                info!("Brought window '{}' to foreground", title);
+                return true;
+            } else {
+                warn!("Failed to bring window '{}' to foreground", title);
+            }
+        } else {
+            warn!("Window '{}' not found for bringing to front", title);
+        }
+    }
+
+    false
+}
