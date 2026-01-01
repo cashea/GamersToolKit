@@ -99,7 +99,8 @@
       "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Add image upscaling for OCR with background preprocessing\n\n- Add scale option \\(1-4x\\) to OCR preprocessing settings\n- Implement bilinear interpolation upscaling for small text detection\n- Move preprocessing to background thread to prevent UI freezing\n- Scale bounding boxes back to original coordinates after OCR\n- Add Scale slider to Vision view preprocessing controls\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git checkout:*)",
       "Bash(cat:*)",
-      "Bash(timeout 180 cargo build:*)"
+      "Bash(timeout 180 cargo build:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Add zone auto-configure feature\n\n- Add Auto Configure button to zone settings dialog\n- Iterates through OCR settings combinations \\(scale, preprocessing, grayscale, invert, contrast\\)\n- Stops when OCR returns text, applies successful settings to zone\n- Shows progress bar, status message, and cancel button during process\n- Uses stored frame data for reliable frame access\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   }
 }

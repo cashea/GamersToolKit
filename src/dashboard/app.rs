@@ -1538,29 +1538,32 @@ impl DashboardApp {
                     .collect::<Vec<_>>()
                     .join(" ");
 
+                // Calculate average confidence
+                let avg_confidence = if ocr_result.text_regions.is_empty() {
+                    0.0
+                } else {
+                    ocr_result.text_regions.iter().map(|r| r.confidence).sum::<f32>()
+                        / ocr_result.text_regions.len() as f32
+                };
+
                 let filtered_text = filter_text_by_content_type(&combined_text, &zone.content_type);
 
                 if !filtered_text.trim().is_empty() {
-                    // Success! Apply settings to zone
-                    tracing::info!(
-                        "Auto-configure succeeded for '{}': text='{}', settings: {:?}",
-                        zone.name,
-                        filtered_text,
-                        test_preprocessing
-                    );
+                    // Found text - check if this is better than our best so far
+                    let ac = self.dashboard_state.vision.zone_selection.auto_configure.as_mut().unwrap();
 
-                    // Apply the successful settings
-                    if let Some(zone) = self.dashboard_state.vision.ocr_zones.get_mut(zone_idx) {
-                        zone.preprocessing = test_preprocessing;
-                        self.dashboard_state.vision.zones_dirty = true;
+                    if avg_confidence > ac.best_confidence {
+                        tracing::info!(
+                            "Auto-configure found better config for '{}': text='{}', confidence={:.2}, settings: {:?}",
+                            zone.name,
+                            filtered_text,
+                            avg_confidence,
+                            test_preprocessing
+                        );
+                        ac.best_confidence = avg_confidence;
+                        ac.best_text = filtered_text;
+                        ac.best_preprocessing = test_preprocessing;
                     }
-
-                    if let Some(ref mut ac) = self.dashboard_state.vision.zone_selection.auto_configure {
-                        ac.current_step = AutoConfigureStep::Completed;
-                        ac.success = true;
-                        ac.status_message = format!("Found: '{}'", filtered_text);
-                    }
-                    return;
                 }
             }
             Err(e) => {
@@ -1568,7 +1571,7 @@ impl DashboardApp {
             }
         }
 
-        // No text found, advance to next configuration
+        // Advance to next configuration
         let ac = self.dashboard_state.vision.zone_selection.auto_configure.as_mut().unwrap();
         ac.status_message = status;
         ac.current_step = AutoConfigureStep::Testing;
@@ -1617,10 +1620,32 @@ impl DashboardApp {
             return;
         }
 
-        // All combinations exhausted
-        ac.current_step = AutoConfigureStep::Completed;
-        ac.success = false;
-        ac.error_message = Some("No settings found that produce text".to_string());
+        // All combinations exhausted - apply best configuration if found
+        if ac.best_preprocessing.is_some() {
+            let best_pp = ac.best_preprocessing.clone();
+            let best_text = ac.best_text.clone();
+            let best_conf = ac.best_confidence;
+
+            // Apply the best settings to the zone
+            if let Some(zone) = self.dashboard_state.vision.ocr_zones.get_mut(zone_idx) {
+                zone.preprocessing = best_pp;
+                self.dashboard_state.vision.zones_dirty = true;
+            }
+
+            ac.current_step = AutoConfigureStep::Completed;
+            ac.success = true;
+            ac.status_message = format!("Best: '{}' ({:.0}%)", best_text, best_conf * 100.0);
+
+            tracing::info!(
+                "Auto-configure completed for zone {}: applied best config with confidence {:.2}",
+                zone_idx,
+                best_conf
+            );
+        } else {
+            ac.current_step = AutoConfigureStep::Completed;
+            ac.success = false;
+            ac.error_message = Some("No settings found that produce text".to_string());
+        }
     }
 }
 

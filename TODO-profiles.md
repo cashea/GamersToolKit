@@ -72,19 +72,25 @@ Add an auto-configure button for individual zone settings that automatically adj
            Apply settings temporarily
            Run OCR on region
            Filter text by content type
-           If filtered text is non-empty:
-             Save settings to zone
-             Return success
-3. If no combination works, show error to user
+           Calculate average confidence score
+           If filtered text is non-empty AND confidence > best_confidence:
+             Update best_preprocessing, best_confidence, best_text
+3. After all combinations tested:
+   If best_preprocessing found:
+     Apply best settings to zone
+     Show success with confidence %
+   Else:
+     Show error to user
 ```
 
 ### State Management
-- `AutoConfigureState` struct in `state.rs:352-379` tracks:
+- `AutoConfigureState` struct in `state.rs:352-385` tracks:
   - Zone index being configured
   - Current step (Starting, Testing, Completed)
   - Current settings being tested (scale, preprocessing, grayscale, invert, contrast)
   - Progress tracking (current/total combinations)
   - Result status (success/error message)
+  - Best configuration found (best_preprocessing, best_confidence, best_text)
 
 ### UI Implementation
 - [x] Button in zone settings dialog (under preprocessing settings)

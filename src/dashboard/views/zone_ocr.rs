@@ -532,8 +532,11 @@ fn render_zone_settings_dialog(ui: &mut egui::Ui, view_state: &mut VisionViewSta
                             if ac.success {
                                 ui.horizontal(|ui| {
                                     ui.label(RichText::new("✓").color(Color32::GREEN));
-                                    ui.label(RichText::new("Settings found!").color(Color32::GREEN));
+                                    ui.label(RichText::new(format!("Best config found! (conf: {:.0}%)", ac.best_confidence * 100.0)).color(Color32::GREEN));
                                 });
+                                if !ac.best_text.is_empty() {
+                                    ui.label(RichText::new(format!("Text: '{}'", ac.best_text)).small().color(Color32::LIGHT_GRAY));
+                                }
                             } else if let Some(ref err) = ac.error_message {
                                 ui.horizontal(|ui| {
                                     ui.label(RichText::new("✗").color(Color32::RED));
@@ -545,7 +548,7 @@ fn render_zone_settings_dialog(ui: &mut egui::Ui, view_state: &mut VisionViewSta
                     }
 
                     // Start button
-                    if ui.button("Auto Configure").on_hover_text("Test different settings until OCR returns text").clicked() {
+                    if ui.button("Auto Configure").on_hover_text("Tests all settings combinations and picks the best one").clicked() {
                         // Calculate total combinations: 4 scales * 2 preprocessing * 2 grayscale * 2 invert * 3 contrast = 96
                         let total = 4 * 2 * 2 * 2 * 3;
                         view_state.zone_selection.auto_configure = Some(AutoConfigureState {
@@ -561,9 +564,26 @@ fn render_zone_settings_dialog(ui: &mut egui::Ui, view_state: &mut VisionViewSta
                             status_message: "Starting...".to_string(),
                             success: false,
                             error_message: None,
+                            best_preprocessing: None,
+                            best_confidence: 0.0,
+                            best_text: String::new(),
                         });
                     }
                 }
+
+                ui.add_space(12.0);
+                ui.separator();
+                ui.add_space(8.0);
+
+                // Zone actions
+                ui.horizontal(|ui| {
+                    if ui.button("Reposition Zone").on_hover_text("Draw a new boundary for this zone").clicked() {
+                        // Set up repositioning mode
+                        view_state.zone_selection.repositioning_zone_index = Some(idx);
+                        view_state.pending_zone_selection_mode = true;
+                        should_close = true;
+                    }
+                });
 
                 ui.add_space(12.0);
 

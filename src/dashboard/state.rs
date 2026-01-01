@@ -376,6 +376,12 @@ pub struct AutoConfigureState {
     pub success: bool,
     /// Error message if failed
     pub error_message: Option<String>,
+    /// Best configuration found so far (preprocessing settings)
+    pub best_preprocessing: Option<crate::config::OcrPreprocessing>,
+    /// Best confidence score found
+    pub best_confidence: f32,
+    /// Best text found
+    pub best_text: String,
 }
 
 /// Steps in the auto-configure process
