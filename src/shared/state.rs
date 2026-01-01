@@ -4,6 +4,7 @@ use crate::config::AppConfig;
 use crate::overlay::OverlayConfig;
 use crate::capture::CaptureConfig;
 use crate::storage::profiles::GameProfile;
+use crate::vision::ScreenMatch;
 
 /// Central shared state between dashboard and overlay
 #[derive(Debug, Clone)]
@@ -156,6 +157,15 @@ pub struct RuntimeState {
     pub overlay_command: Option<OverlayCommand>,
     /// Request to send a test tip
     pub send_test_tip: bool,
+    // Screen Recognition State
+    /// Currently detected screen (if screen recognition is active)
+    pub current_screen: Option<ScreenMatch>,
+    /// Previous screen (for detecting screen changes)
+    pub previous_screen_id: Option<String>,
+    /// Whether a screen change just occurred
+    pub screen_just_changed: bool,
+    /// Last screen recognition time in milliseconds
+    pub last_screen_check_ms: u64,
 }
 
 impl RuntimeState {
@@ -167,5 +177,39 @@ impl RuntimeState {
     /// Set an error message
     pub fn set_error(&mut self, error: impl Into<String>) {
         self.last_error = Some(error.into());
+    }
+
+    /// Update the current screen match
+    /// Returns true if the screen changed
+    pub fn update_screen(&mut self, new_match: Option<ScreenMatch>) -> bool {
+        let new_screen_id = new_match.as_ref().map(|m| m.screen_id.clone());
+        let changed = self.previous_screen_id != new_screen_id;
+
+        if changed {
+            self.previous_screen_id = self.current_screen.as_ref().map(|m| m.screen_id.clone());
+            self.screen_just_changed = true;
+        } else {
+            self.screen_just_changed = false;
+        }
+
+        self.current_screen = new_match;
+        changed
+    }
+
+    /// Get the current screen name if any
+    pub fn current_screen_name(&self) -> Option<&str> {
+        self.current_screen.as_ref().map(|m| m.screen_name.as_str())
+    }
+
+    /// Get the current screen confidence if any
+    pub fn current_screen_confidence(&self) -> Option<f32> {
+        self.current_screen.as_ref().map(|m| m.confidence)
+    }
+
+    /// Clear screen recognition state
+    pub fn clear_screen(&mut self) {
+        self.previous_screen_id = self.current_screen.as_ref().map(|m| m.screen_id.clone());
+        self.current_screen = None;
+        self.screen_just_changed = self.previous_screen_id.is_some();
     }
 }

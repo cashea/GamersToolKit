@@ -10,6 +10,7 @@ pub mod models;
 pub mod ocr;
 pub mod ocr_preprocess;
 pub mod preprocess;
+pub mod screen_recognition;
 pub mod windows_ocr;
 
 pub use ocr_preprocess::{PreprocessResult, apply_preprocessing_with_scale};
@@ -22,6 +23,7 @@ use crate::capture::frame::CapturedFrame;
 
 pub use models::{ModelManager, ModelType, OnnxSession};
 pub use ocr::{OcrEngine, OcrResult};
+pub use screen_recognition::{ScreenRecognizer, ScreenRecognitionConfig, ScreenMatch, AnchorMatch, ScreenNode};
 pub use windows_ocr::{WindowsOcr, WindowsOcrResult, WindowsOcrLine, WindowsOcrFullResult};
 
 /// OCR backend selection

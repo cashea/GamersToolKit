@@ -6,6 +6,9 @@
 pub mod rules;
 pub mod events;
 
+pub use rules::{GameState, ScreenContext, Rule, RuleResult, RulesEngine};
+pub use events::{GameEvent, ThresholdDirection, TimestampedEvent, EventEmitter};
+
 use anyhow::Result;
 use crate::vision::VisionResult;
 

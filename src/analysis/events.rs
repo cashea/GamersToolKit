@@ -28,6 +28,26 @@ pub enum GameEvent {
         threshold: f64,
         direction: ThresholdDirection,
     },
+    /// Screen recognition changed to a new screen
+    ScreenChanged {
+        /// Previous screen ID (None if no screen was detected before)
+        from_screen_id: Option<String>,
+        /// Previous screen name
+        from_screen_name: Option<String>,
+        /// New screen ID
+        to_screen_id: String,
+        /// New screen name
+        to_screen_name: String,
+        /// Confidence level of the new screen detection
+        confidence: f32,
+    },
+    /// No screen is currently being recognized (lost detection)
+    ScreenLost {
+        /// Previously detected screen ID
+        previous_screen_id: String,
+        /// Previously detected screen name
+        previous_screen_name: String,
+    },
 }
 
 /// Direction of threshold crossing

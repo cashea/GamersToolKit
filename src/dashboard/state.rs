@@ -500,6 +500,12 @@ pub struct ScreensViewState {
     pub pending_text_for_anchor: Option<(String, String, (f32, f32, f32, f32))>,
     /// Editable text field for text anchor confirmation dialog
     pub editing_text_anchor_text: String,
+    /// Screen ID being dragged for priority reordering
+    pub dragging_screen_id: Option<String>,
+    /// Drop target screen ID (screen being hovered over during drag)
+    pub drop_target_screen_id: Option<String>,
+    /// Whether to drop before (true) or after (false) the target
+    pub drop_before_target: bool,
 }
 
 impl std::fmt::Debug for ScreensViewState {

@@ -55,6 +55,70 @@ pub struct GameState {
     pub text_values: std::collections::HashMap<String, String>,
     /// Detected elements by ID
     pub elements: std::collections::HashMap<String, bool>,
+    /// Current screen recognition context
+    pub screen_context: ScreenContext,
+}
+
+/// Screen recognition context for rules
+#[derive(Debug, Clone, Default)]
+pub struct ScreenContext {
+    /// Currently detected screen ID (None if no screen detected)
+    pub current_screen_id: Option<String>,
+    /// Currently detected screen name
+    pub current_screen_name: Option<String>,
+    /// Detection confidence (0.0 - 1.0)
+    pub confidence: f32,
+    /// Whether screen just changed this frame
+    pub just_changed: bool,
+    /// Previous screen ID (if screen just changed)
+    pub previous_screen_id: Option<String>,
+    /// Previous screen name (if screen just changed)
+    pub previous_screen_name: Option<String>,
+    /// Parent screen chain (from root to current, for hierarchical screens)
+    pub parent_chain: Vec<String>,
+}
+
+impl ScreenContext {
+    /// Create a new screen context from a screen match
+    pub fn from_match(
+        screen_id: Option<String>,
+        screen_name: Option<String>,
+        confidence: f32,
+        just_changed: bool,
+        previous_id: Option<String>,
+        previous_name: Option<String>,
+        parent_chain: Vec<String>,
+    ) -> Self {
+        Self {
+            current_screen_id: screen_id,
+            current_screen_name: screen_name,
+            confidence,
+            just_changed,
+            previous_screen_id: previous_id,
+            previous_screen_name: previous_name,
+            parent_chain,
+        }
+    }
+
+    /// Check if the current screen matches a given name (case-insensitive)
+    pub fn screen_is(&self, name: &str) -> bool {
+        self.current_screen_name
+            .as_ref()
+            .map(|n| n.eq_ignore_ascii_case(name))
+            .unwrap_or(false)
+    }
+
+    /// Check if the current screen is a child of a screen with the given name
+    pub fn is_child_of(&self, parent_name: &str) -> bool {
+        self.parent_chain
+            .iter()
+            .any(|p| p.eq_ignore_ascii_case(parent_name))
+    }
+
+    /// Check if any screen is currently detected
+    pub fn has_screen(&self) -> bool {
+        self.current_screen_id.is_some()
+    }
 }
 
 /// Result of evaluating a rule
