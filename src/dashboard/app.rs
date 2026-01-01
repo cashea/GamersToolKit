@@ -1256,6 +1256,14 @@ impl DashboardApp {
             }
 
             if let Some(ref manager) = self.overlay_manager {
+                // Bring captured window to front so user can see it
+                {
+                    let shared = self.shared_state.read();
+                    if let Some(ref window_title) = shared.config.capture.target_window {
+                        crate::capture::bring_window_to_front(window_title);
+                    }
+                }
+
                 // Send existing zones to overlay for display
                 let existing_zones: Vec<(String, (f32, f32, f32, f32))> = self.dashboard_state.vision
                     .ocr_zones
@@ -1289,6 +1297,19 @@ impl DashboardApp {
         if let Some(screen_id) = self.dashboard_state.screens.pending_anchor_capture.clone() {
             self.dashboard_state.screens.pending_anchor_capture = None;
 
+            // Auto-start capture if not running (needed to get frame data for anchor)
+            if !self.is_capturing() {
+                tracing::info!("Auto-starting capture for visual anchor capture");
+                if let Err(e) = self.start_capture() {
+                    tracing::error!("Failed to start capture for visual anchor capture: {}", e);
+                    self.dashboard_state.screens.error_message =
+                        Some(format!("Failed to start capture: {}", e));
+                    return;
+                }
+                // Give capture time to start and get first frame
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+
             // Auto-start overlay if not running
             if self.overlay_manager.is_none() {
                 tracing::info!("Auto-starting overlay for visual anchor capture");
@@ -1302,6 +1323,14 @@ impl DashboardApp {
             }
 
             if let Some(ref manager) = self.overlay_manager {
+                // Bring captured window to front so user can see it
+                {
+                    let shared = self.shared_state.read();
+                    if let Some(ref window_title) = shared.config.capture.target_window {
+                        crate::capture::bring_window_to_front(window_title);
+                    }
+                }
+
                 // Get existing anchors for display
                 let existing_anchors: Vec<(String, (f32, f32, f32, f32))> = {
                     let shared = self.shared_state.read();
@@ -1331,6 +1360,19 @@ impl DashboardApp {
         if let Some(screen_id) = self.dashboard_state.screens.pending_text_anchor_capture.clone() {
             self.dashboard_state.screens.pending_text_anchor_capture = None;
 
+            // Auto-start capture if not running (needed to get frame data for anchor)
+            if !self.is_capturing() {
+                tracing::info!("Auto-starting capture for text anchor capture");
+                if let Err(e) = self.start_capture() {
+                    tracing::error!("Failed to start capture for text anchor capture: {}", e);
+                    self.dashboard_state.screens.error_message =
+                        Some(format!("Failed to start capture: {}", e));
+                    return;
+                }
+                // Give capture time to start and get first frame
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+
             // Auto-start overlay if not running
             if self.overlay_manager.is_none() {
                 tracing::info!("Auto-starting overlay for text anchor capture");
@@ -1344,6 +1386,14 @@ impl DashboardApp {
             }
 
             if let Some(ref manager) = self.overlay_manager {
+                // Bring captured window to front so user can see it
+                {
+                    let shared = self.shared_state.read();
+                    if let Some(ref window_title) = shared.config.capture.target_window {
+                        crate::capture::bring_window_to_front(window_title);
+                    }
+                }
+
                 // Get existing anchors for display
                 let existing_anchors: Vec<(String, (f32, f32, f32, f32))> = {
                     let shared = self.shared_state.read();
@@ -1426,12 +1476,29 @@ impl DashboardApp {
                             bounds.3
                         );
 
+                        // Get a fresh frame from capture manager (don't rely on Vision view state)
+                        // Try multiple times with small delays since try_next_frame only returns
+                        // if there's already a frame in the channel buffer
+                        let mut frame = None;
+                        for attempt in 0..10 {
+                            {
+                                let capture_guard = self.capture_manager.lock();
+                                if let Some(ref capture) = *capture_guard {
+                                    frame = capture.try_next_frame();
+                                }
+                            }
+                            if frame.is_some() {
+                                break;
+                            }
+                            if attempt < 9 {
+                                std::thread::sleep(std::time::Duration::from_millis(50));
+                            }
+                        }
+
                         // Extract template from frame data
-                        if let (Some(frame_data), width, height) = (
-                            vision_state.last_frame_data.as_ref(),
-                            vision_state.last_frame_width,
-                            vision_state.last_frame_height,
-                        ) {
+                        if let Some(frame) = frame {
+                            let width = frame.width;
+                            let height = frame.height;
                             if width > 0 && height > 0 {
                                 // Convert normalized bounds to pixel coordinates
                                 let px = (bounds.0 * width as f32) as u32;
@@ -1440,7 +1507,7 @@ impl DashboardApp {
                                 let ph = (bounds.3 * height as f32) as u32;
 
                                 // Extract region and encode as PNG
-                                if let Some(png_data) = extract_region_as_png(frame_data, width, height, px, py, pw, ph) {
+                                if let Some(png_data) = extract_region_as_png(&frame.data, width, height, px, py, pw, ph) {
                                     let new_anchor = crate::storage::profiles::ScreenAnchor {
                                         id: format!("anchor_{}", std::time::SystemTime::now()
                                             .duration_since(std::time::UNIX_EPOCH)
@@ -1469,8 +1536,14 @@ impl DashboardApp {
                                     }
                                 } else {
                                     tracing::warn!("Failed to extract region as PNG");
+                                    self.dashboard_state.screens.error_message =
+                                        Some("Failed to extract anchor region".to_string());
                                 }
                             }
+                        } else {
+                            tracing::warn!("No frame available for visual anchor capture");
+                            self.dashboard_state.screens.error_message =
+                                Some("No capture frame available. Make sure capture is running.".to_string());
                         }
 
                         self.dashboard_state.screens.pending_anchor_capture = None;
