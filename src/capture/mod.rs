@@ -4,6 +4,7 @@
 //! This is a read-only operation that captures pixels without any game interaction.
 
 pub mod frame;
+pub use frame::CapturedFrame;
 
 use anyhow::{Context, Result};
 use crossbeam_channel::{Receiver, Sender, bounded};
@@ -23,7 +24,6 @@ use windows_capture::{
     window::Window,
 };
 
-use crate::capture::frame::CapturedFrame;
 
 /// Screen capture configuration
 #[derive(Debug, Clone)]

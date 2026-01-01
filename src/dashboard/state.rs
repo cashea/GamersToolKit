@@ -2,9 +2,8 @@
 
 use std::collections::HashMap;
 use std::time::Instant;
-use strsim::normalized_levenshtein;
 use crate::config::DashboardViewSetting;
-use crate::storage::profiles::{GameProfile, LabeledRegion, OcrRegion};
+use crate::storage::profiles::{GameProfile, OcrRegion};
 
 /// OCR result granularity - word-level or line-level
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -240,26 +239,6 @@ pub struct VisionViewState {
     /// Last frame height
     pub last_frame_height: u32,
 
-    // Region labeling state
-    /// Search text for finding regions
-    pub region_search_text: String,
-    /// Filtered OCR results matching search text
-    pub matching_regions: Vec<usize>,
-    /// Currently selected region index (for labeling)
-    pub selected_region_index: Option<usize>,
-    /// Label text being entered for selected region
-    pub pending_label: String,
-    /// Saved labeled regions
-    pub labeled_regions: Vec<LabeledRegion>,
-    /// Live values for labeled regions (updated from OCR results)
-    pub labeled_regions_live: Vec<LabeledRegionLive>,
-    /// Index of labeled region being edited (None = creating new)
-    pub editing_labeled_region: Option<usize>,
-    /// Flag indicating labels have been modified and need saving
-    pub labels_dirty: bool,
-    /// Flag to trigger immediate profile save
-    pub pending_profile_save: bool,
-
     // Zone OCR state
     /// Zone selection state
     pub zone_selection: ZoneSelectionState,
@@ -318,16 +297,6 @@ impl Default for VisionViewState {
             last_frame_data: None,
             last_frame_width: 0,
             last_frame_height: 0,
-            // Region labeling defaults
-            region_search_text: String::new(),
-            matching_regions: Vec::new(),
-            selected_region_index: None,
-            pending_label: String::new(),
-            labeled_regions: Vec::new(),
-            labeled_regions_live: Vec::new(),
-            editing_labeled_region: None,
-            labels_dirty: false,
-            pending_profile_save: false,
             // Zone OCR defaults
             zone_selection: ZoneSelectionState::default(),
             ocr_zones: Vec::new(),
@@ -349,17 +318,6 @@ pub struct OcrResultDisplay {
     pub bounds: (u32, u32, u32, u32),
     /// Confidence score
     pub confidence: f32,
-}
-
-/// Live value for a labeled region, updated from OCR results
-#[derive(Debug, Clone, Default)]
-pub struct LabeledRegionLive {
-    /// Current detected text (None if no match found)
-    pub current_text: Option<String>,
-    /// Current confidence score
-    pub current_confidence: Option<f32>,
-    /// Index of the matched OCR result
-    pub matched_ocr_index: Option<usize>,
 }
 
 /// State for zone selection mode
@@ -387,6 +345,48 @@ pub struct ZoneSelectionState {
     pub pending_use_custom_preprocessing: bool,
     /// Zone index being repositioned (None = creating new zone)
     pub repositioning_zone_index: Option<usize>,
+    /// Auto-configure state for a zone
+    pub auto_configure: Option<AutoConfigureState>,
+}
+
+/// State for auto-configure process
+#[derive(Debug, Clone)]
+pub struct AutoConfigureState {
+    /// Zone index being auto-configured
+    pub zone_index: usize,
+    /// Current step in the auto-configure process
+    pub current_step: AutoConfigureStep,
+    /// Current scale being tested (1-4)
+    pub current_scale: u32,
+    /// Current preprocessing enabled state
+    pub current_preprocessing_enabled: bool,
+    /// Current grayscale setting
+    pub current_grayscale: bool,
+    /// Current invert setting
+    pub current_invert: bool,
+    /// Current contrast value
+    pub current_contrast: f32,
+    /// Total combinations to try
+    pub total_combinations: usize,
+    /// Current combination index
+    pub current_combination: usize,
+    /// Status message to display
+    pub status_message: String,
+    /// Whether auto-configure completed successfully
+    pub success: bool,
+    /// Error message if failed
+    pub error_message: Option<String>,
+}
+
+/// Steps in the auto-configure process
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutoConfigureStep {
+    /// Starting the process
+    Starting,
+    /// Testing a configuration
+    Testing,
+    /// Completed (success or failure)
+    Completed,
 }
 
 /// Zone OCR result for display
@@ -402,151 +402,14 @@ pub struct ZoneOcrResult {
     pub last_updated: Instant,
 }
 
-impl VisionViewState {
-    /// Update labeled regions with current OCR results using bounds overlap and fuzzy text matching
-    /// Uses match_threshold for fuzzy text similarity when bounds overlap is insufficient
-    /// Returns true if any labels were updated
-    pub fn update_labels_from_ocr(&mut self) -> bool {
-        if self.labeled_regions.is_empty() || self.last_ocr_results.is_empty() {
-            // Clear live values if no OCR results
-            self.labeled_regions_live.clear();
-            return false;
-        }
-
-        // Ensure live values vec matches labeled_regions length
-        self.labeled_regions_live.resize_with(
-            self.labeled_regions.len(),
-            LabeledRegionLive::default,
-        );
-
-        let mut any_updated = false;
-        let threshold = self.match_threshold;
-
-        for (label_idx, labeled) in self.labeled_regions.iter().enumerate() {
-            let live = &mut self.labeled_regions_live[label_idx];
-            let old_text = live.current_text.clone();
-
-            // Find best matching OCR result using combined scoring:
-            // 1. High bounds overlap (>50%) with any text = good match
-            // 2. Moderate bounds overlap (>20%) with similar text = good match
-            // 3. Any bounds overlap with very similar text = acceptable match
-            let mut best_match: Option<(usize, f32, f32)> = None; // (index, combined_score, text_similarity)
-
-            for (ocr_idx, ocr_result) in self.last_ocr_results.iter().enumerate() {
-                let bounds_overlap = calculate_bounds_overlap(labeled.bounds, ocr_result.bounds);
-                let text_similarity = fuzzy_text_similarity(&labeled.matched_text, &ocr_result.text);
-
-                // Calculate combined score:
-                // - High bounds overlap is most important (position-based matching)
-                // - Text similarity acts as a tiebreaker and validation
-                let combined_score = if bounds_overlap > 0.5 {
-                    // Strong position match - accept with bonus for text similarity
-                    bounds_overlap + (text_similarity * 0.3)
-                } else if bounds_overlap > 0.2 && text_similarity >= threshold {
-                    // Moderate position match with good text match
-                    bounds_overlap + (text_similarity * 0.5)
-                } else if bounds_overlap > 0.1 && text_similarity >= threshold * 1.1 {
-                    // Weak position match needs very good text match
-                    (bounds_overlap * 0.5) + (text_similarity * 0.5)
-                } else {
-                    0.0 // No match
-                };
-
-                if combined_score > 0.0 {
-                    if best_match.map_or(true, |(_, best_score, _)| combined_score > best_score) {
-                        best_match = Some((ocr_idx, combined_score, text_similarity));
-                    }
-                }
-            }
-
-            if let Some((ocr_idx, _, text_sim)) = best_match {
-                let ocr_result = &self.last_ocr_results[ocr_idx];
-                live.current_text = Some(ocr_result.text.clone());
-                // Store the text similarity as the "confidence" since OCR doesn't provide it
-                live.current_confidence = Some(text_sim);
-                live.matched_ocr_index = Some(ocr_idx);
-
-                if old_text.as_ref() != Some(&ocr_result.text) {
-                    any_updated = true;
-                }
-            } else {
-                // No match found - clear live values
-                if live.current_text.is_some() {
-                    any_updated = true;
-                }
-                live.current_text = None;
-                live.current_confidence = None;
-                live.matched_ocr_index = None;
-            }
-        }
-
-        any_updated
-    }
+/// Action to perform on a profile (for UI-to-app communication)
+#[derive(Debug, Clone)]
+pub enum ProfileAction {
+    /// Activate a profile by ID
+    Activate(String),
+    /// Deactivate the current profile
+    Deactivate,
 }
-
-/// Calculate overlap ratio between two bounding boxes
-/// Returns a value from 0.0 (no overlap) to 1.0 (perfect overlap)
-fn calculate_bounds_overlap(a: (u32, u32, u32, u32), b: (u32, u32, u32, u32)) -> f32 {
-    let (ax, ay, aw, ah) = a;
-    let (bx, by, bw, bh) = b;
-
-    // Calculate intersection
-    let x1 = ax.max(bx);
-    let y1 = ay.max(by);
-    let x2 = (ax + aw).min(bx + bw);
-    let y2 = (ay + ah).min(by + bh);
-
-    if x1 >= x2 || y1 >= y2 {
-        return 0.0; // No overlap
-    }
-
-    let intersection_area = (x2 - x1) * (y2 - y1);
-    let a_area = aw * ah;
-    let b_area = bw * bh;
-
-    // Use IoU (Intersection over Union) for overlap score
-    let union_area = a_area + b_area - intersection_area;
-    if union_area == 0 {
-        return 0.0;
-    }
-
-    intersection_area as f32 / union_area as f32
-}
-
-/// Calculate fuzzy text similarity between two strings
-/// Returns a value from 0.0 (completely different) to 1.0 (identical)
-/// Uses normalized Levenshtein distance for robust OCR error tolerance
-pub fn fuzzy_text_similarity(a: &str, b: &str) -> f32 {
-    if a.is_empty() && b.is_empty() {
-        return 1.0;
-    }
-    if a.is_empty() || b.is_empty() {
-        return 0.0;
-    }
-
-    // Normalize: lowercase and trim whitespace
-    let a_normalized = a.to_lowercase();
-    let b_normalized = b.to_lowercase();
-
-    // Calculate base similarity
-    let base_similarity = normalized_levenshtein(&a_normalized, &b_normalized) as f32;
-
-    // Also compare with punctuation removed (OCR often drops periods, commas, etc.)
-    // This helps match "4.5M" with "45M" or "1,000" with "1000"
-    let a_no_punct: String = a_normalized.chars().filter(|c| c.is_alphanumeric()).collect();
-    let b_no_punct: String = b_normalized.chars().filter(|c| c.is_alphanumeric()).collect();
-
-    let punct_similarity = if !a_no_punct.is_empty() && !b_no_punct.is_empty() {
-        normalized_levenshtein(&a_no_punct, &b_no_punct) as f32
-    } else {
-        0.0
-    };
-
-    // Return the better of the two scores
-    base_similarity.max(punct_similarity)
-}
-
-// LabeledRegion is now imported from crate::storage::profiles
 
 /// Profiles view state
 #[derive(Debug, Default)]
@@ -565,6 +428,8 @@ pub struct ProfilesViewState {
     pub new_profile_name: String,
     /// New profile executable
     pub new_profile_executable: String,
+    /// Pending profile action (processed by DashboardApp)
+    pub pending_action: Option<ProfileAction>,
 }
 
 /// Settings view state

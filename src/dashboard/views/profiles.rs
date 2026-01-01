@@ -4,7 +4,7 @@ use egui::RichText;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
-use crate::dashboard::state::ProfilesViewState;
+use crate::dashboard::state::{ProfilesViewState, ProfileAction};
 use crate::dashboard::theme::{ThemeColors, color_with_alpha};
 use crate::shared::SharedAppState;
 use crate::storage::profiles::GameProfile;
@@ -280,7 +280,7 @@ fn render_profile_details(
                 egui::Button::new("Deactivate")
                     .min_size(egui::vec2(100.0, 32.0))
             ).clicked() {
-                // Will deactivate
+                view_state.pending_action = Some(ProfileAction::Deactivate);
             }
         } else {
             if ui.add(
@@ -291,7 +291,7 @@ fn render_profile_details(
                 .fill(ThemeColors::ACCENT_SUCCESS)
                 .min_size(egui::vec2(100.0, 32.0))
             ).clicked() {
-                // Will activate
+                view_state.pending_action = Some(ProfileAction::Activate(profile.id.clone()));
             }
         }
 

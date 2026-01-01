@@ -6,7 +6,7 @@ use egui::{Color32, RichText, Rounding, Stroke, Vec2};
 use uuid::Uuid;
 
 use crate::dashboard::components::add_scroll_slider;
-use crate::dashboard::state::{VisionViewState, ZoneOcrResult};
+use crate::dashboard::state::{AutoConfigureState, AutoConfigureStep, VisionViewState, ZoneOcrResult};
 use crate::storage::profiles::{ContentType, OcrRegion};
 
 /// Render the zone OCR management panel
@@ -488,6 +488,81 @@ fn render_zone_settings_dialog(ui: &mut egui::Ui, view_state: &mut VisionViewSta
                 if !use_custom {
                     ui.add_space(4.0);
                     ui.label(RichText::new("Using global preprocessing settings").italics().color(Color32::GRAY));
+                }
+
+                ui.add_space(12.0);
+                ui.separator();
+                ui.add_space(8.0);
+
+                // Auto Configure section
+                ui.label(RichText::new("Auto Configure").strong());
+                ui.add_space(4.0);
+                ui.label(RichText::new("Automatically find settings that produce OCR text.").small().color(Color32::GRAY));
+                ui.add_space(8.0);
+
+                // Check if auto-configure is running for this zone
+                let is_auto_configuring = view_state.zone_selection.auto_configure
+                    .as_ref()
+                    .map(|ac| ac.zone_index == idx && ac.current_step != AutoConfigureStep::Completed)
+                    .unwrap_or(false);
+
+                if is_auto_configuring {
+                    // Show progress
+                    if let Some(ref ac) = view_state.zone_selection.auto_configure {
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.label(&ac.status_message);
+                        });
+
+                        // Progress bar
+                        let progress = ac.current_combination as f32 / ac.total_combinations.max(1) as f32;
+                        ui.add(egui::ProgressBar::new(progress).show_percentage());
+
+                        ui.add_space(4.0);
+
+                        // Cancel button
+                        if ui.button("Cancel").clicked() {
+                            view_state.zone_selection.auto_configure = None;
+                        }
+                    }
+                } else {
+                    // Show result if just completed
+                    if let Some(ref ac) = view_state.zone_selection.auto_configure {
+                        if ac.zone_index == idx && ac.current_step == AutoConfigureStep::Completed {
+                            if ac.success {
+                                ui.horizontal(|ui| {
+                                    ui.label(RichText::new("✓").color(Color32::GREEN));
+                                    ui.label(RichText::new("Settings found!").color(Color32::GREEN));
+                                });
+                            } else if let Some(ref err) = ac.error_message {
+                                ui.horizontal(|ui| {
+                                    ui.label(RichText::new("✗").color(Color32::RED));
+                                    ui.label(RichText::new(err).color(Color32::RED));
+                                });
+                            }
+                            ui.add_space(4.0);
+                        }
+                    }
+
+                    // Start button
+                    if ui.button("Auto Configure").on_hover_text("Test different settings until OCR returns text").clicked() {
+                        // Calculate total combinations: 4 scales * 2 preprocessing * 2 grayscale * 2 invert * 3 contrast = 96
+                        let total = 4 * 2 * 2 * 2 * 3;
+                        view_state.zone_selection.auto_configure = Some(AutoConfigureState {
+                            zone_index: idx,
+                            current_step: AutoConfigureStep::Starting,
+                            current_scale: 1,
+                            current_preprocessing_enabled: false,
+                            current_grayscale: false,
+                            current_invert: false,
+                            current_contrast: 1.0,
+                            total_combinations: total,
+                            current_combination: 0,
+                            status_message: "Starting...".to_string(),
+                            success: false,
+                            error_message: None,
+                        });
+                    }
                 }
 
                 ui.add_space(12.0);

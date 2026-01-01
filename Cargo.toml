@@ -71,6 +71,12 @@ toml = "0.8"
 parking_lot = "0.12"
 crossbeam-channel = "0.5"
 
+# Fuzzy string matching
+strsim = "0.11"
+
+# UUID generation
+uuid = { version = "1.11", features = ["v4"] }
+
 # CLI
 clap = { version = "4.5", features = ["derive"] }
 

@@ -11,7 +11,7 @@ use crate::analysis::Tip;
 use crate::capture::{CaptureTarget, ScreenCapture};
 use crate::config::WindowState;
 use crate::dashboard::components::render_sidebar;
-use crate::dashboard::state::{DashboardState, DashboardView};
+use crate::dashboard::state::{AutoConfigureStep, DashboardState, DashboardView};
 use crate::dashboard::theme;
 use crate::dashboard::views::{
     render_capture_view, render_home_view, render_overlay_view,
@@ -124,7 +124,7 @@ impl DashboardApp {
         };
 
         // Load or create profile based on saved active_profile_id
-        let (active_profile, initial_labels) = Self::load_profile_by_id(
+        let (active_profile, initial_zones) = Self::load_profile_by_id(
             &profiles_dir,
             dashboard_settings.active_profile_id.as_deref(),
         );
@@ -145,10 +145,8 @@ impl DashboardApp {
         dashboard_state.vision.auto_run_ocr = vision_settings.auto_run_ocr;
         dashboard_state.vision.preprocessing = vision_settings.preprocessing.clone();
 
-        // Load labels from profile into vision state
-        dashboard_state.vision.labeled_regions = initial_labels.0;
         // Load zones from profile into vision state
-        dashboard_state.vision.ocr_zones = initial_labels.1;
+        dashboard_state.vision.ocr_zones = initial_zones;
 
         tracing::info!(
             "Restored settings: view={:?}, backend={:?}, granularity={:?}",
@@ -183,13 +181,13 @@ impl DashboardApp {
     }
 
     /// Load a profile by ID, or create default if not found
-    /// Returns (profile, (labeled_regions, ocr_zones))
+    /// Returns (profile, ocr_zones)
     fn load_profile_by_id(
         profiles_dir: &Option<PathBuf>,
         profile_id: Option<&str>,
-    ) -> (Option<GameProfile>, (Vec<crate::storage::profiles::LabeledRegion>, Vec<crate::storage::profiles::OcrRegion>)) {
+    ) -> (Option<GameProfile>, Vec<crate::storage::profiles::OcrRegion>) {
         let Some(ref dir) = profiles_dir else {
-            return (None, (vec![], vec![]));
+            return (None, vec![]);
         };
 
         // Try to load the requested profile
@@ -199,15 +197,13 @@ impl DashboardApp {
         if profile_path.exists() {
             match crate::storage::profiles::load_profile(&profile_path) {
                 Ok(profile) => {
-                    let labels = profile.labeled_regions.clone();
                     let zones = profile.ocr_regions.clone();
                     tracing::info!(
-                        "Loaded profile '{}' with {} labels and {} zones",
+                        "Loaded profile '{}' with {} zones",
                         profile.name,
-                        labels.len(),
                         zones.len()
                     );
-                    return (Some(profile), (labels, zones));
+                    return (Some(profile), zones);
                 }
                 Err(e) => {
                     tracing::warn!("Failed to load profile '{}': {}", profile_id, e);
@@ -221,14 +217,12 @@ impl DashboardApp {
             if default_path.exists() {
                 match crate::storage::profiles::load_profile(&default_path) {
                     Ok(profile) => {
-                        let labels = profile.labeled_regions.clone();
                         let zones = profile.ocr_regions.clone();
                         tracing::info!(
-                            "Loaded fallback default profile with {} labels and {} zones",
-                            labels.len(),
+                            "Loaded fallback default profile with {} zones",
                             zones.len()
                         );
-                        return (Some(profile), (labels, zones));
+                        return (Some(profile), zones);
                     }
                     Err(e) => {
                         tracing::warn!("Failed to load default profile: {}", e);
@@ -256,7 +250,110 @@ impl DashboardApp {
             tracing::info!("Created new default profile");
         }
 
-        (Some(profile), (vec![], vec![]))
+        (Some(profile), vec![])
+    }
+
+    /// Activate a profile by ID
+    /// Saves current zones to old profile, loads new profile's zones
+    fn activate_profile(&mut self, profile_id: &str) {
+        // First, save current zones to the currently active profile (if any)
+        self.save_current_zones_to_profile();
+
+        // Find the profile to activate
+        let profile_to_activate = {
+            let state = self.shared_state.read();
+            state.profiles.iter().find(|p| p.id == profile_id).cloned()
+        };
+
+        let Some(profile) = profile_to_activate else {
+            tracing::warn!("Cannot activate profile '{}': not found", profile_id);
+            return;
+        };
+
+        // Load zones from the new profile
+        let zones = profile.ocr_regions.clone();
+        let zone_count = zones.len();
+        let profile_name = profile.name.clone();
+        let profile_id_owned = profile.id.clone();
+
+        // Update dashboard state with new zones
+        self.dashboard_state.vision.ocr_zones = zones;
+        self.dashboard_state.vision.zone_ocr_results.clear();
+        self.dashboard_state.vision.zones_dirty = false;
+
+        // Update active profile reference
+        self.active_profile = Some(profile);
+
+        // Update shared state
+        {
+            let mut state = self.shared_state.write();
+            state.active_profile_id = Some(profile_id_owned.clone());
+            state.config.dashboard.active_profile_id = Some(profile_id_owned);
+        }
+
+        // Mark config for save
+        self.pending_save = true;
+        self.last_auto_save = Instant::now();
+
+        tracing::info!(
+            "Activated profile '{}' with {} zones",
+            profile_name,
+            zone_count
+        );
+    }
+
+    /// Deactivate the current profile
+    /// Saves current zones and clears active profile
+    fn deactivate_profile(&mut self) {
+        // First, save current zones to the currently active profile
+        self.save_current_zones_to_profile();
+
+        let old_profile_name = self.active_profile.as_ref().map(|p| p.name.clone());
+
+        // Clear active profile
+        self.active_profile = None;
+
+        // Update shared state
+        {
+            let mut state = self.shared_state.write();
+            state.active_profile_id = None;
+            state.config.dashboard.active_profile_id = None;
+        }
+
+        // Clear zones from vision state
+        self.dashboard_state.vision.ocr_zones.clear();
+        self.dashboard_state.vision.zone_ocr_results.clear();
+        self.dashboard_state.vision.zones_dirty = false;
+
+        // Mark config for save
+        self.pending_save = true;
+        self.last_auto_save = Instant::now();
+
+        if let Some(name) = old_profile_name {
+            tracing::info!("Deactivated profile '{}'", name);
+        }
+    }
+
+    /// Save current zones to the active profile (helper method)
+    fn save_current_zones_to_profile(&mut self) {
+        if let (Some(ref mut profile), Some(ref profiles_dir)) =
+            (&mut self.active_profile, &self.profiles_dir)
+        {
+            // Update profile with current zones
+            profile.ocr_regions = self.dashboard_state.vision.ocr_zones.clone();
+
+            // Save to disk
+            let profile_path = profiles_dir.join(format!("{}.json", profile.id));
+            if let Err(e) = crate::storage::profiles::save_profile(profile, &profile_path) {
+                tracing::error!("Failed to save zones to profile '{}': {}", profile.name, e);
+            } else {
+                tracing::debug!(
+                    "Saved {} zones to profile '{}' before switching",
+                    profile.ocr_regions.len(),
+                    profile.name
+                );
+            }
+        }
     }
 
     /// Start screen capture
@@ -465,34 +562,25 @@ impl DashboardApp {
         }
     }
 
-    /// Auto-save profile labels and zones if they've been modified (debounced)
-    /// Also handles immediate save when pending_profile_save is set
-    fn auto_save_profile_labels(&mut self) {
-        const LABEL_SAVE_DELAY: Duration = Duration::from_secs(2);
+    /// Auto-save profile zones if they've been modified (debounced)
+    fn auto_save_profile_zones(&mut self) {
+        const ZONE_SAVE_DELAY: Duration = Duration::from_secs(2);
 
-        // Check for immediate save request
-        let immediate_save = self.dashboard_state.vision.pending_profile_save;
-        if immediate_save {
-            self.dashboard_state.vision.pending_profile_save = false;
-        }
-
-        let labels_dirty = self.dashboard_state.vision.labels_dirty;
         let zones_dirty = self.dashboard_state.vision.zones_dirty;
 
-        if !labels_dirty && !zones_dirty && !immediate_save {
+        if !zones_dirty {
             return;
         }
 
-        // Only save if enough time has passed since last change (unless immediate save requested)
-        if !immediate_save && self.last_profile_save.elapsed() < LABEL_SAVE_DELAY {
+        // Only save if enough time has passed since last change
+        if self.last_profile_save.elapsed() < ZONE_SAVE_DELAY {
             return;
         }
 
         if let (Some(ref mut profile), Some(ref profiles_dir)) =
             (&mut self.active_profile, &self.profiles_dir)
         {
-            // Update profile with current labels and zones from vision state
-            profile.labeled_regions = self.dashboard_state.vision.labeled_regions.clone();
+            // Update profile with current zones from vision state
             profile.ocr_regions = self.dashboard_state.vision.ocr_zones.clone();
 
             let profile_path = profiles_dir.join(format!("{}.json", profile.id));
@@ -500,12 +588,10 @@ impl DashboardApp {
                 tracing::error!("Failed to save profile: {}", e);
             } else {
                 tracing::info!(
-                    "Saved {} labels and {} zones to profile '{}'",
-                    profile.labeled_regions.len(),
+                    "Saved {} zones to profile '{}'",
                     profile.ocr_regions.len(),
                     profile.name
                 );
-                self.dashboard_state.vision.labels_dirty = false;
                 self.dashboard_state.vision.zones_dirty = false;
                 self.last_profile_save = Instant::now();
             }
@@ -637,9 +723,11 @@ impl eframe::App for DashboardApp {
         // Process commands from UI
         self.process_capture_commands();
         self.process_overlay_commands();
+        self.process_profile_commands();
         self.process_test_tip();
         self.process_vision_commands();
         self.process_zone_commands();
+        self.process_auto_configure();
 
         // Sync overlay config changes to running overlay
         self.sync_overlay_config();
@@ -657,7 +745,7 @@ impl eframe::App for DashboardApp {
         self.auto_save_settings();
 
         // Auto-save profile labels if needed
-        self.auto_save_profile_labels();
+        self.auto_save_profile_zones();
 
         // Save window state periodically
         self.save_window_state(ctx);
@@ -669,7 +757,7 @@ impl eframe::App for DashboardApp {
         }
 
         // Request continuous repaint when capturing or when there are pending saves
-        if self.is_capturing() || self.pending_save || self.dashboard_state.vision.labels_dirty || self.dashboard_state.vision.zones_dirty {
+        if self.is_capturing() || self.pending_save || self.dashboard_state.vision.zones_dirty {
             ctx.request_repaint();
         }
 
@@ -751,19 +839,19 @@ impl eframe::App for DashboardApp {
             }
         }
 
-        // Save any pending profile label changes
-        if self.dashboard_state.vision.labels_dirty {
+        // Save any pending zone changes
+        if self.dashboard_state.vision.zones_dirty {
             if let (Some(ref mut profile), Some(ref profiles_dir)) =
                 (&mut self.active_profile, &self.profiles_dir)
             {
-                profile.labeled_regions = self.dashboard_state.vision.labeled_regions.clone();
+                profile.ocr_regions = self.dashboard_state.vision.ocr_zones.clone();
                 let profile_path = profiles_dir.join(format!("{}.json", profile.id));
                 if let Err(e) = crate::storage::profiles::save_profile(profile, &profile_path) {
-                    tracing::error!("Failed to save profile labels on exit: {}", e);
+                    tracing::error!("Failed to save profile zones on exit: {}", e);
                 } else {
                     tracing::info!(
-                        "Saved {} labels to profile on exit",
-                        profile.labeled_regions.len()
+                        "Saved {} zones to profile on exit",
+                        profile.ocr_regions.len()
                     );
                 }
             }
@@ -838,6 +926,24 @@ impl DashboardApp {
             let mut state = self.shared_state.write();
             state.runtime.is_overlay_running = false;
             state.runtime.overlay_visible = false;
+        }
+    }
+
+    /// Process profile commands from the UI (activate/deactivate)
+    fn process_profile_commands(&mut self) {
+        use crate::dashboard::state::ProfileAction;
+
+        let action = self.dashboard_state.profiles.pending_action.take();
+
+        if let Some(action) = action {
+            match action {
+                ProfileAction::Activate(profile_id) => {
+                    self.activate_profile(&profile_id);
+                }
+                ProfileAction::Deactivate => {
+                    self.deactivate_profile();
+                }
+            }
         }
     }
 
@@ -1026,10 +1132,21 @@ impl DashboardApp {
                     .map(|z| (z.name.clone(), z.bounds))
                     .collect();
 
-                manager.enter_zone_selection_mode(existing_zones);
+                // Get capture frame dimensions for proper coordinate normalization
+                let capture_size = {
+                    let w = self.dashboard_state.vision.last_frame_width;
+                    let h = self.dashboard_state.vision.last_frame_height;
+                    if w > 0 && h > 0 {
+                        Some((w, h))
+                    } else {
+                        None
+                    }
+                };
+
+                manager.enter_zone_selection_mode(existing_zones, capture_size);
                 self.dashboard_state.vision.zone_selection.is_selecting = true;
                 self.dashboard_state.vision.zone_selection_error = None;
-                tracing::info!("Requested zone selection mode");
+                tracing::info!("Requested zone selection mode with capture_size: {:?}", capture_size);
             } else {
                 tracing::warn!("Cannot enter zone selection mode: overlay not running");
                 self.dashboard_state.vision.zone_selection_error =
@@ -1248,6 +1365,262 @@ impl DashboardApp {
                 }
             }
         }
+    }
+
+    /// Process auto-configure for a zone
+    /// This iterates through different OCR settings until text is detected
+    fn process_auto_configure(&mut self) {
+        use crate::config::OcrPreprocessing;
+        use crate::vision::OcrBackend;
+
+        // Check if auto-configure is active
+        let auto_config = match self.dashboard_state.vision.zone_selection.auto_configure.as_mut() {
+            Some(ac) if ac.current_step != AutoConfigureStep::Completed => ac,
+            _ => return,
+        };
+
+        let zone_idx = auto_config.zone_index;
+
+        // Validate zone exists
+        let zone = match self.dashboard_state.vision.ocr_zones.get(zone_idx) {
+            Some(z) => z.clone(),
+            None => {
+                if let Some(ref mut ac) = self.dashboard_state.vision.zone_selection.auto_configure {
+                    ac.current_step = AutoConfigureStep::Completed;
+                    ac.error_message = Some("Zone not found".to_string());
+                }
+                return;
+            }
+        };
+
+        // Ensure OCR is initialized
+        let vision_state = &self.dashboard_state.vision;
+        let selected_backend = vision_state.selected_backend;
+        let backend_ready = match selected_backend {
+            OcrBackend::WindowsOcr => vision_state.windows_ocr_initialized,
+            OcrBackend::PaddleOcr => vision_state.ocr_initialized,
+        };
+
+        if !backend_ready {
+            // Try to initialize
+            if self.vision_pipeline.is_none() {
+                match VisionPipeline::new() {
+                    Ok(p) => self.vision_pipeline = Some(p),
+                    Err(e) => {
+                        if let Some(ref mut ac) = self.dashboard_state.vision.zone_selection.auto_configure {
+                            ac.current_step = AutoConfigureStep::Completed;
+                            ac.error_message = Some(format!("Failed to create pipeline: {}", e));
+                        }
+                        return;
+                    }
+                }
+            }
+
+            if let Some(ref mut pipeline) = self.vision_pipeline {
+                pipeline.set_backend(selected_backend);
+                if let Err(e) = pipeline.init_ocr() {
+                    if let Some(ref mut ac) = self.dashboard_state.vision.zone_selection.auto_configure {
+                        ac.current_step = AutoConfigureStep::Completed;
+                        ac.error_message = Some(format!("Failed to init OCR: {}", e));
+                    }
+                    return;
+                }
+
+                match selected_backend {
+                    OcrBackend::WindowsOcr => {
+                        self.dashboard_state.vision.windows_ocr_initialized = true;
+                    }
+                    OcrBackend::PaddleOcr => {
+                        self.dashboard_state.vision.ocr_initialized = true;
+                    }
+                }
+            }
+        }
+
+        // Use stored frame data from vision state (more reliable than try_next_frame)
+        let frame = {
+            let vision = &self.dashboard_state.vision;
+            if let Some(ref data) = vision.last_frame_data {
+                if vision.last_frame_width > 0 && vision.last_frame_height > 0 {
+                    Some(crate::capture::CapturedFrame::new(
+                        data.clone(),
+                        vision.last_frame_width,
+                        vision.last_frame_height,
+                    ))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+
+        let Some(frame) = frame else {
+            if let Some(ref mut ac) = self.dashboard_state.vision.zone_selection.auto_configure {
+                ac.status_message = "Waiting for capture frame... (open Vision tab)".to_string();
+            }
+            return;
+        };
+
+        let Some(ref mut pipeline) = self.vision_pipeline else {
+            return;
+        };
+
+        pipeline.set_backend(selected_backend);
+
+        let frame_width = frame.width;
+        let frame_height = frame.height;
+
+        if frame_width == 0 || frame_height == 0 {
+            return;
+        }
+
+        // Convert zone bounds to pixels
+        let x = (zone.bounds.0 * frame_width as f32) as u32;
+        let y = (zone.bounds.1 * frame_height as f32) as u32;
+        let w = (zone.bounds.2 * frame_width as f32) as u32;
+        let h = (zone.bounds.3 * frame_height as f32) as u32;
+
+        if w < 5 || h < 5 {
+            if let Some(ref mut ac) = self.dashboard_state.vision.zone_selection.auto_configure {
+                ac.current_step = AutoConfigureStep::Completed;
+                ac.error_message = Some("Zone too small".to_string());
+            }
+            return;
+        }
+
+        // Get current settings to test from auto_configure state
+        let ac = self.dashboard_state.vision.zone_selection.auto_configure.as_ref().unwrap();
+        let test_preprocessing = if ac.current_preprocessing_enabled {
+            Some(OcrPreprocessing {
+                enabled: true,
+                grayscale: ac.current_grayscale,
+                contrast: ac.current_contrast,
+                sharpen: 0.0,
+                invert: ac.current_invert,
+                scale: ac.current_scale,
+            })
+        } else {
+            Some(OcrPreprocessing {
+                enabled: false,
+                grayscale: false,
+                contrast: 1.0,
+                sharpen: 0.0,
+                invert: false,
+                scale: ac.current_scale,
+            })
+        };
+
+        // Update status message
+        let status = format!(
+            "Testing: scale={}x, pp={}, gray={}, inv={}, contrast={:.1}",
+            ac.current_scale,
+            if ac.current_preprocessing_enabled { "on" } else { "off" },
+            if ac.current_grayscale { "Y" } else { "N" },
+            if ac.current_invert { "Y" } else { "N" },
+            ac.current_contrast
+        );
+
+        // Run OCR with current settings
+        let result = pipeline.process_region_with_preprocessing(
+            &frame,
+            x, y, w, h,
+            test_preprocessing.as_ref(),
+        );
+
+        match result {
+            Ok(ocr_result) => {
+                // Check if we got text
+                let combined_text: String = ocr_result
+                    .text_regions
+                    .iter()
+                    .map(|r| r.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+
+                let filtered_text = filter_text_by_content_type(&combined_text, &zone.content_type);
+
+                if !filtered_text.trim().is_empty() {
+                    // Success! Apply settings to zone
+                    tracing::info!(
+                        "Auto-configure succeeded for '{}': text='{}', settings: {:?}",
+                        zone.name,
+                        filtered_text,
+                        test_preprocessing
+                    );
+
+                    // Apply the successful settings
+                    if let Some(zone) = self.dashboard_state.vision.ocr_zones.get_mut(zone_idx) {
+                        zone.preprocessing = test_preprocessing;
+                        self.dashboard_state.vision.zones_dirty = true;
+                    }
+
+                    if let Some(ref mut ac) = self.dashboard_state.vision.zone_selection.auto_configure {
+                        ac.current_step = AutoConfigureStep::Completed;
+                        ac.success = true;
+                        ac.status_message = format!("Found: '{}'", filtered_text);
+                    }
+                    return;
+                }
+            }
+            Err(e) => {
+                tracing::debug!("Auto-configure OCR failed: {}", e);
+            }
+        }
+
+        // No text found, advance to next configuration
+        let ac = self.dashboard_state.vision.zone_selection.auto_configure.as_mut().unwrap();
+        ac.status_message = status;
+        ac.current_step = AutoConfigureStep::Testing;
+        ac.current_combination += 1;
+
+        // Advance settings: scale -> preprocessing -> grayscale -> invert -> contrast
+        // Contrast values: 1.0, 1.5, 2.0
+        let contrast_values = [1.0, 1.5, 2.0];
+
+        // Find current contrast index
+        let current_contrast_idx = contrast_values.iter()
+            .position(|&c| (c - ac.current_contrast).abs() < 0.01)
+            .unwrap_or(0);
+
+        // Try next contrast
+        if current_contrast_idx + 1 < contrast_values.len() {
+            ac.current_contrast = contrast_values[current_contrast_idx + 1];
+            return;
+        }
+
+        // Reset contrast, try next invert
+        ac.current_contrast = 1.0;
+        if !ac.current_invert {
+            ac.current_invert = true;
+            return;
+        }
+
+        // Reset invert, try next grayscale
+        ac.current_invert = false;
+        if !ac.current_grayscale {
+            ac.current_grayscale = true;
+            return;
+        }
+
+        // Reset grayscale, try next preprocessing state
+        ac.current_grayscale = false;
+        if !ac.current_preprocessing_enabled {
+            ac.current_preprocessing_enabled = true;
+            return;
+        }
+
+        // Reset preprocessing, try next scale
+        ac.current_preprocessing_enabled = false;
+        if ac.current_scale < 4 {
+            ac.current_scale += 1;
+            return;
+        }
+
+        // All combinations exhausted
+        ac.current_step = AutoConfigureStep::Completed;
+        ac.success = false;
+        ac.error_message = Some("No settings found that produce text".to_string());
     }
 }
 

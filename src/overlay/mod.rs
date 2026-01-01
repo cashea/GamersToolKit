@@ -36,6 +36,8 @@ pub enum ZoneCommand {
     /// Enter zone selection mode with existing zones to display
     EnterSelectionMode {
         existing_zones: Vec<(String, (f32, f32, f32, f32))>,
+        /// Capture frame dimensions (width, height) for proper coordinate normalization
+        capture_size: Option<(u32, u32)>,
     },
     /// Exit zone selection mode
     ExitSelectionMode,
@@ -302,8 +304,17 @@ impl OverlayManager {
     ///
     /// Sends a command to the overlay to enter zone selection mode,
     /// displaying existing zones and allowing the user to draw a new one.
-    pub fn enter_zone_selection_mode(&self, existing_zones: Vec<(String, (f32, f32, f32, f32))>) {
-        let _ = self.zone_cmd_sender.send(ZoneCommand::EnterSelectionMode { existing_zones });
+    /// The capture_size should be provided when a capture is active to ensure
+    /// zone coordinates are properly normalized relative to the captured content.
+    pub fn enter_zone_selection_mode(
+        &self,
+        existing_zones: Vec<(String, (f32, f32, f32, f32))>,
+        capture_size: Option<(u32, u32)>,
+    ) {
+        let _ = self.zone_cmd_sender.send(ZoneCommand::EnterSelectionMode {
+            existing_zones,
+            capture_size,
+        });
     }
 
     /// Exit zone selection mode
@@ -342,6 +353,7 @@ impl OverlayManager {
             monitor_bounds: None,
             current_click_through: config.click_through,
             current_monitor_index: config.monitor_index,
+            capture_size: None,
         };
 
         // Run egui_overlay
@@ -367,6 +379,8 @@ struct OverlayApp {
     current_click_through: bool,
     /// Current monitor index (tracked for runtime changes)
     current_monitor_index: Option<usize>,
+    /// Capture frame dimensions for zone coordinate normalization
+    capture_size: Option<(u32, u32)>,
 }
 
 impl EguiOverlay for OverlayApp {
@@ -380,17 +394,22 @@ impl EguiOverlay for OverlayApp {
         while let Ok(cmd) = self.zone_cmd_receiver.try_recv() {
             let mut state = self.state.write();
             match cmd {
-                ZoneCommand::EnterSelectionMode { existing_zones } => {
+                ZoneCommand::EnterSelectionMode { existing_zones, capture_size } => {
                     state.mode = OverlayMode::ZoneSelection;
                     state.zone_selection.existing_zones = existing_zones;
                     state.zone_selection.start_point = None;
                     state.zone_selection.current_point = None;
                     state.zone_selection.completed_selection = None;
-                    info!("Entered zone selection mode");
+                    // Store capture size for coordinate normalization
+                    drop(state); // Release lock before modifying self
+                    self.capture_size = capture_size;
+                    info!("Entered zone selection mode with capture_size: {:?}", capture_size);
                 }
                 ZoneCommand::ExitSelectionMode => {
                     state.mode = OverlayMode::Normal;
                     state.zone_selection = ZoneSelectionOverlayState::default();
+                    drop(state);
+                    self.capture_size = None;
                     info!("Exited zone selection mode");
                 }
                 ZoneCommand::UpdateZones { zones } => {
@@ -474,8 +493,11 @@ impl EguiOverlay for OverlayApp {
 
         // Handle zone selection mode
         if current_mode == OverlayMode::ZoneSelection {
-            let screen_size = self.monitor_bounds
-                .map(|(_, _, w, h)| (w as f32, h as f32))
+            // Use capture frame dimensions for normalization if available,
+            // otherwise fall back to monitor bounds
+            let screen_size = self.capture_size
+                .map(|(w, h)| (w as f32, h as f32))
+                .or_else(|| self.monitor_bounds.map(|(_, _, w, h)| (w as f32, h as f32)))
                 .unwrap_or((1920.0, 1080.0));
 
             let result = {

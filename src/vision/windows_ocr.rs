@@ -13,7 +13,7 @@ use windows::{
     Media::Ocr::{OcrEngine as WinOcrEngine, OcrResult as WinOcrResult},
 };
 
-/// OCR result from Windows OCR
+/// OCR result from Windows OCR (word-level)
 #[derive(Debug, Clone)]
 pub struct WindowsOcrResult {
     /// Recognized text
@@ -22,6 +22,26 @@ pub struct WindowsOcrResult {
     pub bounds: (u32, u32, u32, u32),
     /// Word-level confidence (Windows OCR doesn't provide per-word confidence, so this is 1.0)
     pub confidence: f32,
+}
+
+/// OCR line result containing the full line text and its words
+#[derive(Debug, Clone)]
+pub struct WindowsOcrLine {
+    /// Full line text (all words joined with spaces)
+    pub text: String,
+    /// Bounding box for the entire line (x, y, width, height)
+    pub bounds: (u32, u32, u32, u32),
+    /// Individual words in this line
+    pub words: Vec<WindowsOcrResult>,
+}
+
+/// Complete OCR results with both line-level and word-level data
+#[derive(Debug, Clone)]
+pub struct WindowsOcrFullResult {
+    /// Full text of the entire image
+    pub full_text: String,
+    /// Line-level results (each line contains its words)
+    pub lines: Vec<WindowsOcrLine>,
 }
 
 /// Windows OCR engine wrapper
@@ -144,6 +164,46 @@ impl WindowsOcr {
 
         Ok(text)
     }
+
+    /// Recognize text with both word-level and line-level results
+    ///
+    /// Returns a `WindowsOcrFullResult` containing:
+    /// - `full_text`: The complete text from the image
+    /// - `lines`: Each line with its text, bounds, and individual words
+    pub fn recognize_full(&self, image_data: &[u8], width: u32, height: u32) -> Result<WindowsOcrFullResult> {
+        if image_data.is_empty() || width == 0 || height == 0 {
+            return Ok(WindowsOcrFullResult {
+                full_text: String::new(),
+                lines: vec![],
+            });
+        }
+
+        debug!("Windows OCR: Processing {}x{} image (full results)", width, height);
+
+        // Convert RGBA to BGRA (Windows expects BGRA)
+        let bgra_data = rgba_to_bgra(image_data);
+
+        // Create SoftwareBitmap from the image data
+        let bitmap = create_software_bitmap(&bgra_data, width, height)?;
+
+        // Run OCR
+        let ocr_result = run_ocr_sync(&self.engine, &bitmap)?;
+
+        // Get full text
+        let full_text = ocr_result.Text()
+            .context("Failed to get OCR text")?
+            .to_string();
+
+        // Extract line and word results
+        let lines = extract_full_results(&ocr_result)?;
+
+        debug!("Windows OCR: Found {} lines, {} total words",
+            lines.len(),
+            lines.iter().map(|l| l.words.len()).sum::<usize>()
+        );
+
+        Ok(WindowsOcrFullResult { full_text, lines })
+    }
 }
 
 /// Convert RGBA to BGRA (Windows expects BGRA)
@@ -224,7 +284,7 @@ fn run_ocr_sync(engine: &WinOcrEngine, bitmap: &SoftwareBitmap) -> Result<WinOcr
     Ok(result)
 }
 
-/// Extract text regions from OCR result
+/// Extract text regions from OCR result (word-level only)
 fn extract_results(ocr_result: &WinOcrResult) -> Result<Vec<WindowsOcrResult>> {
     let mut results = Vec::new();
 
@@ -263,6 +323,80 @@ fn extract_results(ocr_result: &WinOcrResult) -> Result<Vec<WindowsOcrResult>> {
     }
 
     Ok(results)
+}
+
+/// Extract full results with both line-level and word-level data
+fn extract_full_results(ocr_result: &WinOcrResult) -> Result<Vec<WindowsOcrLine>> {
+    let mut line_results = Vec::new();
+
+    let lines = ocr_result.Lines()
+        .context("Failed to get OCR lines")?;
+
+    for i in 0..lines.Size().context("Failed to get lines size")? {
+        let line = lines.GetAt(i)
+            .context("Failed to get line")?;
+
+        let words_collection = line.Words()
+            .context("Failed to get words")?;
+
+        let mut words = Vec::new();
+        let mut word_texts = Vec::new();
+
+        // Track line bounds (union of all word bounds)
+        let mut min_x = u32::MAX;
+        let mut min_y = u32::MAX;
+        let mut max_x = 0u32;
+        let mut max_y = 0u32;
+
+        for j in 0..words_collection.Size().context("Failed to get words size")? {
+            let word = words_collection.GetAt(j)
+                .context("Failed to get word")?;
+
+            let text = word.Text()
+                .context("Failed to get word text")?
+                .to_string();
+
+            let rect = word.BoundingRect()
+                .context("Failed to get bounding rect")?;
+
+            let x = rect.X as u32;
+            let y = rect.Y as u32;
+            let w = rect.Width as u32;
+            let h = rect.Height as u32;
+
+            // Update line bounds
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x + w);
+            max_y = max_y.max(y + h);
+
+            word_texts.push(text.clone());
+
+            words.push(WindowsOcrResult {
+                text,
+                bounds: (x, y, w, h),
+                confidence: 1.0,
+            });
+        }
+
+        // Build line text from words
+        let line_text = word_texts.join(" ");
+
+        // Calculate line bounds
+        let line_bounds = if words.is_empty() {
+            (0, 0, 0, 0)
+        } else {
+            (min_x, min_y, max_x - min_x, max_y - min_y)
+        };
+
+        line_results.push(WindowsOcrLine {
+            text: line_text,
+            bounds: line_bounds,
+            words,
+        });
+    }
+
+    Ok(line_results)
 }
 
 #[cfg(test)]
