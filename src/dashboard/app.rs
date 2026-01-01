@@ -15,14 +15,14 @@ use crate::dashboard::state::{AutoConfigureStep, DashboardState, DashboardView};
 use crate::dashboard::theme;
 use crate::dashboard::views::{
     render_capture_view, render_home_view, render_overlay_view,
-    render_profiles_view, render_settings_view, render_vision_view,
+    render_profiles_view, render_screens_view, render_settings_view, render_vision_view,
 };
 use crate::hotkey::HotkeyManager;
 use crate::overlay::{OverlayManager, ZoneSelectionResult};
 use crate::shared::SharedAppState;
 use crate::storage::profiles::{GameProfile, ContentType};
 use crate::dashboard::state::ZoneOcrResult;
-use crate::vision::{VisionPipeline, ModelManager, ModelType, OcrGranularity};
+use crate::vision::{VisionPipeline, ModelManager, ModelType, OcrGranularity, ScreenRecognizer};
 use std::thread::JoinHandle;
 
 /// The main dashboard application
@@ -69,6 +69,10 @@ pub struct DashboardApp {
     last_synced_vision: Option<crate::config::VisionSettings>,
     /// Last synced dashboard view (for change detection)
     last_synced_view: Option<DashboardView>,
+    /// Screen recognizer for detecting game screens
+    screen_recognizer: ScreenRecognizer,
+    /// Last time screen recognition was run
+    last_screen_check: Instant,
 }
 
 /// Helper for calculating FPS
@@ -123,11 +127,40 @@ impl DashboardApp {
             (state.config.vision.clone(), state.config.dashboard.clone())
         };
 
+        // Load all profiles from disk into shared state
+        if let Some(ref dir) = profiles_dir {
+            match crate::storage::profiles::load_all_profiles(dir) {
+                Ok(profiles) => {
+                    let mut state = shared_state.write();
+                    for profile in profiles {
+                        state.add_profile(profile);
+                    }
+                    tracing::info!("Loaded {} profiles from disk", state.profiles.len());
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to load profiles: {}", e);
+                }
+            }
+        }
+
         // Load or create profile based on saved active_profile_id
         let (active_profile, initial_zones) = Self::load_profile_by_id(
             &profiles_dir,
             dashboard_settings.active_profile_id.as_deref(),
         );
+
+        // Initialize screen recognizer and load screens from profile
+        let mut screen_recognizer = ScreenRecognizer::new();
+        if let Some(ref profile) = active_profile {
+            if !profile.screens.is_empty() {
+                screen_recognizer.load_screens(profile.screens.clone());
+                tracing::info!(
+                    "Loaded {} screens for recognition from profile '{}'",
+                    profile.screens.len(),
+                    profile.name
+                );
+            }
+        }
 
         let mut dashboard_state = DashboardState::default();
 
@@ -177,6 +210,8 @@ impl DashboardApp {
             last_profile_save: Instant::now(),
             last_synced_vision: Some(vision_settings),
             last_synced_view: Some(DashboardView::from_setting(dashboard_settings.last_view)),
+            screen_recognizer,
+            last_screen_check: Instant::now(),
         }
     }
 
@@ -241,6 +276,9 @@ impl DashboardApp {
             templates: vec![],
             rules: vec![],
             labeled_regions: vec![],
+            screens: vec![],
+            screen_recognition_enabled: false,
+            screen_check_interval_ms: 500,
         };
 
         let default_path = dir.join("default.json");
@@ -295,6 +333,9 @@ impl DashboardApp {
         self.pending_save = true;
         self.last_auto_save = Instant::now();
 
+        // Reload screens for screen recognition
+        self.reload_screens_from_profile();
+
         tracing::info!(
             "Activated profile '{}' with {} zones",
             profile_name,
@@ -328,6 +369,9 @@ impl DashboardApp {
         // Mark config for save
         self.pending_save = true;
         self.last_auto_save = Instant::now();
+
+        // Clear screens from recognizer
+        self.reload_screens_from_profile();
 
         if let Some(name) = old_profile_name {
             tracing::info!("Deactivated profile '{}'", name);
@@ -598,6 +642,45 @@ impl DashboardApp {
         }
     }
 
+    /// Sync screens from shared state to profile and recognizer when modified
+    fn sync_profile_screens(&mut self) {
+        if !self.dashboard_state.screens.screens_dirty {
+            return;
+        }
+
+        // Get updated screens from shared state
+        let updated_screens = {
+            let shared = self.shared_state.read();
+            shared.active_profile().map(|p| p.screens.clone())
+        };
+
+        if let Some(screens) = updated_screens {
+            // Update local profile
+            if let Some(ref mut profile) = self.active_profile {
+                profile.screens = screens.clone();
+
+                // Save profile to disk
+                if let Some(ref profiles_dir) = self.profiles_dir {
+                    let profile_path = profiles_dir.join(format!("{}.json", profile.id));
+                    if let Err(e) = crate::storage::profiles::save_profile(profile, &profile_path) {
+                        tracing::error!("Failed to save profile screens: {}", e);
+                    } else {
+                        tracing::info!(
+                            "Saved {} screens to profile '{}'",
+                            screens.len(),
+                            profile.name
+                        );
+                    }
+                }
+
+                // Reload screens into recognizer
+                self.screen_recognizer.load_screens(screens);
+            }
+        }
+
+        self.dashboard_state.screens.screens_dirty = false;
+    }
+
     /// Save window state periodically (debounced, only when changed)
     fn save_window_state(&mut self, ctx: &egui::Context) {
         const WINDOW_SAVE_INTERVAL: Duration = Duration::from_secs(5);
@@ -728,6 +811,7 @@ impl eframe::App for DashboardApp {
         self.process_vision_commands();
         self.process_zone_commands();
         self.process_auto_configure();
+        self.process_screen_recognition();
 
         // Sync overlay config changes to running overlay
         self.sync_overlay_config();
@@ -747,6 +831,9 @@ impl eframe::App for DashboardApp {
         // Auto-save profile labels if needed
         self.auto_save_profile_zones();
 
+        // Sync profile screens if modified
+        self.sync_profile_screens();
+
         // Save window state periodically
         self.save_window_state(ctx);
 
@@ -757,7 +844,8 @@ impl eframe::App for DashboardApp {
         }
 
         // Request continuous repaint when capturing or when there are pending saves
-        if self.is_capturing() || self.pending_save || self.dashboard_state.vision.zones_dirty {
+        if self.is_capturing() || self.pending_save || self.dashboard_state.vision.zones_dirty
+            || self.dashboard_state.screens.screens_dirty {
             ctx.request_repaint();
         }
 
@@ -804,6 +892,13 @@ impl eframe::App for DashboardApp {
                                 &mut self.dashboard_state.vision,
                                 &self.shared_state,
                                 &self.capture_manager,
+                            );
+                        }
+                        DashboardView::Screens => {
+                            render_screens_view(
+                                ui,
+                                &mut self.dashboard_state,
+                                &self.shared_state,
                             );
                         }
                         DashboardView::Profiles => {
@@ -929,7 +1024,7 @@ impl DashboardApp {
         }
     }
 
-    /// Process profile commands from the UI (activate/deactivate)
+    /// Process profile commands from the UI (activate/deactivate/create/delete)
     fn process_profile_commands(&mut self) {
         use crate::dashboard::state::ProfileAction;
 
@@ -942,6 +1037,42 @@ impl DashboardApp {
                 }
                 ProfileAction::Deactivate => {
                     self.deactivate_profile();
+                }
+                ProfileAction::Create(profile) => {
+                    // Save profile to disk
+                    if let Some(ref profiles_dir) = self.profiles_dir {
+                        let profile_path = profiles_dir.join(format!("{}.json", profile.id));
+                        if let Err(e) = crate::storage::profiles::save_profile(&profile, &profile_path) {
+                            tracing::error!("Failed to save new profile '{}': {}", profile.name, e);
+                        } else {
+                            tracing::info!("Created and saved profile '{}' to disk", profile.name);
+                        }
+                    }
+                    // Add to shared state
+                    let mut state = self.shared_state.write();
+                    state.add_profile(profile);
+                }
+                ProfileAction::Delete(profile_id) => {
+                    // Remove from shared state first
+                    {
+                        let mut state = self.shared_state.write();
+                        state.remove_profile(&profile_id);
+                    }
+                    // Delete from disk
+                    if let Some(ref profiles_dir) = self.profiles_dir {
+                        if let Err(e) = crate::storage::profiles::delete_profile(profiles_dir, &profile_id) {
+                            tracing::error!("Failed to delete profile '{}' from disk: {}", profile_id, e);
+                        } else {
+                            tracing::info!("Deleted profile '{}' from disk", profile_id);
+                        }
+                    }
+                    // If this was the active profile, deactivate it
+                    if self.active_profile.as_ref().map(|p| &p.id) == Some(&profile_id) {
+                        self.active_profile = None;
+                        self.dashboard_state.vision.ocr_zones.clear();
+                        self.dashboard_state.vision.zone_ocr_results.clear();
+                        self.reload_screens_from_profile();
+                    }
                 }
             }
         }
@@ -1154,6 +1285,90 @@ impl DashboardApp {
             }
         }
 
+        // Handle request to enter visual anchor capture mode
+        if let Some(screen_id) = self.dashboard_state.screens.pending_anchor_capture.clone() {
+            self.dashboard_state.screens.pending_anchor_capture = None;
+
+            // Auto-start overlay if not running
+            if self.overlay_manager.is_none() {
+                tracing::info!("Auto-starting overlay for visual anchor capture");
+                if let Err(e) = self.start_overlay() {
+                    tracing::error!("Failed to start overlay for visual anchor capture: {}", e);
+                    self.dashboard_state.screens.error_message =
+                        Some(format!("Failed to start overlay: {}", e));
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+
+            if let Some(ref manager) = self.overlay_manager {
+                // Get existing anchors for display
+                let existing_anchors: Vec<(String, (f32, f32, f32, f32))> = {
+                    let shared = self.shared_state.read();
+                    shared.active_profile()
+                        .and_then(|p| p.screens.iter().find(|s| s.id == screen_id))
+                        .map(|s| s.anchors.iter()
+                            .map(|a| (a.id.clone(), a.bounds))
+                            .collect())
+                        .unwrap_or_default()
+                };
+
+                let capture_size = {
+                    let w = self.dashboard_state.vision.last_frame_width;
+                    let h = self.dashboard_state.vision.last_frame_height;
+                    if w > 0 && h > 0 { Some((w, h)) } else { None }
+                };
+
+                manager.enter_visual_anchor_mode(screen_id, existing_anchors, capture_size);
+                tracing::info!("Requested visual anchor capture mode");
+            } else {
+                self.dashboard_state.screens.error_message =
+                    Some("Overlay failed to start".to_string());
+            }
+        }
+
+        // Handle request to enter text anchor capture mode
+        if let Some(screen_id) = self.dashboard_state.screens.pending_text_anchor_capture.clone() {
+            self.dashboard_state.screens.pending_text_anchor_capture = None;
+
+            // Auto-start overlay if not running
+            if self.overlay_manager.is_none() {
+                tracing::info!("Auto-starting overlay for text anchor capture");
+                if let Err(e) = self.start_overlay() {
+                    tracing::error!("Failed to start overlay for text anchor capture: {}", e);
+                    self.dashboard_state.screens.error_message =
+                        Some(format!("Failed to start overlay: {}", e));
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+
+            if let Some(ref manager) = self.overlay_manager {
+                // Get existing anchors for display
+                let existing_anchors: Vec<(String, (f32, f32, f32, f32))> = {
+                    let shared = self.shared_state.read();
+                    shared.active_profile()
+                        .and_then(|p| p.screens.iter().find(|s| s.id == screen_id))
+                        .map(|s| s.anchors.iter()
+                            .map(|a| (a.id.clone(), a.bounds))
+                            .collect())
+                        .unwrap_or_default()
+                };
+
+                let capture_size = {
+                    let w = self.dashboard_state.vision.last_frame_width;
+                    let h = self.dashboard_state.vision.last_frame_height;
+                    if w > 0 && h > 0 { Some((w, h)) } else { None }
+                };
+
+                manager.enter_text_anchor_mode(screen_id, existing_anchors, capture_size);
+                tracing::info!("Requested text anchor capture mode");
+            } else {
+                self.dashboard_state.screens.error_message =
+                    Some("Overlay failed to start".to_string());
+            }
+        }
+
         let vision_state = &mut self.dashboard_state.vision;
 
         // Poll for zone selection results from overlay
@@ -1195,7 +1410,189 @@ impl DashboardApp {
                         vision_state.zone_selection.is_selecting = false;
                         vision_state.zone_selection.current_selection = None;
                         vision_state.zone_selection.repositioning_zone_index = None;
-                        tracing::info!("Zone selection cancelled");
+                        self.dashboard_state.screens.pending_anchor_capture = None;
+                        self.dashboard_state.screens.pending_text_anchor_capture = None;
+                        self.dashboard_state.screens.pending_full_capture = false;
+                        tracing::info!("Selection cancelled");
+                    }
+                    ZoneSelectionResult::VisualAnchorCaptured { screen_id, bounds } => {
+                        // Handle visual anchor capture for screen recognition
+                        tracing::info!(
+                            "Visual anchor captured for screen {}: ({:.2}, {:.2}, {:.2}, {:.2})",
+                            screen_id,
+                            bounds.0,
+                            bounds.1,
+                            bounds.2,
+                            bounds.3
+                        );
+
+                        // Extract template from frame data
+                        if let (Some(frame_data), width, height) = (
+                            vision_state.last_frame_data.as_ref(),
+                            vision_state.last_frame_width,
+                            vision_state.last_frame_height,
+                        ) {
+                            if width > 0 && height > 0 {
+                                // Convert normalized bounds to pixel coordinates
+                                let px = (bounds.0 * width as f32) as u32;
+                                let py = (bounds.1 * height as f32) as u32;
+                                let pw = (bounds.2 * width as f32) as u32;
+                                let ph = (bounds.3 * height as f32) as u32;
+
+                                // Extract region and encode as PNG
+                                if let Some(png_data) = extract_region_as_png(frame_data, width, height, px, py, pw, ph) {
+                                    let new_anchor = crate::storage::profiles::ScreenAnchor {
+                                        id: format!("anchor_{}", std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .unwrap()
+                                            .as_millis()),
+                                        anchor_type: crate::storage::profiles::AnchorType::Visual,
+                                        bounds,
+                                        template_data: Some(png_data),
+                                        expected_text: None,
+                                        text_similarity: 0.8,
+                                        required: true,
+                                    };
+
+                                    // Add to screen
+                                    let mut shared = self.shared_state.write();
+                                    let active_id = shared.active_profile_id.clone();
+                                    if let Some(profile) = shared.profiles.iter_mut()
+                                        .find(|p| active_id.as_ref() == Some(&p.id))
+                                    {
+                                        if let Some(screen) = profile.screens.iter_mut()
+                                            .find(|s| s.id == screen_id)
+                                        {
+                                            screen.anchors.push(new_anchor);
+                                            tracing::info!("Added visual anchor to screen {}", screen_id);
+                                        }
+                                    }
+                                } else {
+                                    tracing::warn!("Failed to extract region as PNG");
+                                }
+                            }
+                        }
+
+                        self.dashboard_state.screens.pending_anchor_capture = None;
+                        self.dashboard_state.screens.screens_dirty = true;
+                    }
+                    ZoneSelectionResult::TextAnchorCaptured { screen_id, bounds } => {
+                        // Handle text anchor capture for screen recognition
+                        tracing::info!(
+                            "Text anchor captured for screen {}: ({:.2}, {:.2}, {:.2}, {:.2})",
+                            screen_id,
+                            bounds.0,
+                            bounds.1,
+                            bounds.2,
+                            bounds.3
+                        );
+
+                        // Ensure OCR pipeline is initialized
+                        let selected_backend = self.dashboard_state.vision.selected_backend;
+                        if self.vision_pipeline.is_none() {
+                            match VisionPipeline::new() {
+                                Ok(p) => {
+                                    self.vision_pipeline = Some(p);
+                                    tracing::info!("Created vision pipeline for text anchor OCR");
+                                }
+                                Err(e) => {
+                                    tracing::error!("Failed to create vision pipeline: {}", e);
+                                }
+                            }
+                        }
+
+                        // Initialize OCR if needed
+                        if let Some(ref mut pipeline) = self.vision_pipeline {
+                            pipeline.set_backend(selected_backend);
+                            if !pipeline.is_ocr_ready() {
+                                if let Err(e) = pipeline.init_ocr() {
+                                    tracing::error!("Failed to initialize OCR for text anchor: {}", e);
+                                } else {
+                                    tracing::info!("Initialized {:?} OCR for text anchor", selected_backend);
+                                }
+                            }
+                        }
+
+                        // Run OCR on the region and show confirmation dialog
+                        // We need to get a frame to run OCR on
+                        let detected_text = {
+                            let frame = {
+                                let capture_guard = self.capture_manager.lock();
+                                if let Some(ref capture) = *capture_guard {
+                                    capture.try_next_frame()
+                                } else {
+                                    None
+                                }
+                            };
+
+                            if let Some(frame) = frame {
+                                let width = frame.width;
+                                let height = frame.height;
+
+                                if width > 0 && height > 0 {
+                                    // Convert normalized bounds to pixel coordinates
+                                    let px = (bounds.0 * width as f32) as u32;
+                                    let py = (bounds.1 * height as f32) as u32;
+                                    let pw = (bounds.2 * width as f32) as u32;
+                                    let ph = (bounds.3 * height as f32) as u32;
+
+                                    tracing::info!("Running OCR on region: {}x{} at ({}, {})", pw, ph, px, py);
+
+                                    // Try to run OCR on the region
+                                    if let Some(ref mut pipeline) = self.vision_pipeline {
+                                        match pipeline.process_region_with_preprocessing(
+                                            &frame, px, py, pw, ph, None,
+                                        ) {
+                                            Ok(result) => {
+                                                tracing::info!("OCR returned {} text regions", result.text_regions.len());
+                                                // Combine all detected text
+                                                let text: String = result.text_regions.iter()
+                                                    .map(|r| r.text.as_str())
+                                                    .collect::<Vec<_>>()
+                                                    .join(" ");
+                                                if !text.is_empty() {
+                                                    tracing::info!("Detected text: '{}'", text);
+                                                    Some(text)
+                                                } else {
+                                                    tracing::warn!("OCR returned empty text");
+                                                    None
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!("OCR failed for text anchor: {}", e);
+                                                None
+                                            }
+                                        }
+                                    } else {
+                                        tracing::warn!("Vision pipeline not available for text anchor OCR");
+                                        None
+                                    }
+                                } else {
+                                    tracing::warn!("Invalid frame dimensions for text anchor OCR");
+                                    None
+                                }
+                            } else {
+                                tracing::warn!("No frame available for text anchor OCR");
+                                None
+                            }
+                        };
+
+                        // Store for dialog (show even if OCR failed - user can enter text manually)
+                        let text = detected_text.unwrap_or_else(|| "(no text detected)".to_string());
+                        self.dashboard_state.screens.pending_text_for_anchor = Some((screen_id.clone(), text, bounds));
+                        self.dashboard_state.screens.editing_text_anchor_text.clear();
+
+                        self.dashboard_state.screens.pending_text_anchor_capture = None;
+                    }
+                    ZoneSelectionResult::FullScreenCaptured { screen_id } => {
+                        // Handle full screen template capture
+                        tracing::info!(
+                            "Full screen template captured for screen {}",
+                            screen_id
+                        );
+                        // TODO: Store current frame as template for screen definition
+                        self.dashboard_state.screens.pending_full_capture = false;
+                        self.dashboard_state.screens.screens_dirty = true;
                     }
                 }
             }
@@ -1647,6 +2044,102 @@ impl DashboardApp {
             ac.error_message = Some("No settings found that produce text".to_string());
         }
     }
+
+    /// Process screen recognition to detect current game screen
+    fn process_screen_recognition(&mut self) {
+        // Check if screen recognition is enabled for the active profile
+        let (enabled, check_interval_ms) = {
+            let shared = self.shared_state.read();
+            match shared.active_profile() {
+                Some(profile) => (profile.screen_recognition_enabled, profile.screen_check_interval_ms),
+                None => (false, 500),
+            }
+        };
+
+        if !enabled {
+            // Clear screen state if recognition was disabled
+            let mut shared = self.shared_state.write();
+            if shared.runtime.current_screen.is_some() {
+                shared.runtime.clear_screen();
+            }
+            return;
+        }
+
+        // Check if enough time has passed since last check
+        let elapsed = self.last_screen_check.elapsed();
+        if elapsed.as_millis() < check_interval_ms as u128 {
+            return;
+        }
+
+        self.last_screen_check = Instant::now();
+
+        // Get a frame from capture
+        let frame = {
+            let capture_guard = self.capture_manager.lock();
+            if let Some(ref capture) = *capture_guard {
+                capture.try_next_frame()
+            } else {
+                None
+            }
+        };
+
+        let Some(frame) = frame else {
+            return;
+        };
+
+        if frame.width == 0 || frame.height == 0 {
+            return;
+        }
+
+        // Run screen recognition
+        // Note: For now we don't provide an OCR function for text anchors
+        // This could be added later by integrating with the vision pipeline
+        let result = self.screen_recognizer.recognize::<fn(u32, u32, u32, u32) -> Option<String>>(
+            &frame.data,
+            frame.width,
+            frame.height,
+            None, // No OCR function for text anchors yet
+        );
+
+        // Update shared state with result
+        let mut shared = self.shared_state.write();
+        let changed = shared.runtime.update_screen(result.clone());
+
+        if changed {
+            if let Some(ref screen) = shared.runtime.current_screen {
+                tracing::info!(
+                    "Screen changed to '{}' (confidence: {:.0}%)",
+                    screen.screen_name,
+                    screen.confidence * 100.0
+                );
+            } else if shared.runtime.previous_screen_id.is_some() {
+                tracing::info!("Screen recognition: no screen matched");
+            }
+        }
+
+        // Update timing stat
+        shared.runtime.last_screen_check_ms = elapsed.as_millis() as u64;
+    }
+
+    /// Reload screens into the recognizer from the active profile
+    fn reload_screens_from_profile(&mut self) {
+        if let Some(ref profile) = self.active_profile {
+            if !profile.screens.is_empty() {
+                self.screen_recognizer.load_screens(profile.screens.clone());
+                tracing::info!(
+                    "Reloaded {} screens for recognition from profile '{}'",
+                    profile.screens.len(),
+                    profile.name
+                );
+            } else {
+                // Clear screens if profile has none
+                self.screen_recognizer.load_screens(vec![]);
+            }
+        } else {
+            // No active profile, clear screens
+            self.screen_recognizer.load_screens(vec![]);
+        }
+    }
 }
 
 /// Run the dashboard application
@@ -1718,4 +2211,62 @@ fn filter_text_by_content_type(text: &str, content_type: &ContentType) -> String
             cleaned
         }
     }
+}
+
+/// Extract a region from BGRA frame data and encode as PNG
+fn extract_region_as_png(
+    frame_data: &[u8],
+    frame_width: u32,
+    frame_height: u32,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+) -> Option<Vec<u8>> {
+    use image::{ImageBuffer, Rgba};
+
+    // Validate bounds
+    if x >= frame_width || y >= frame_height {
+        return None;
+    }
+
+    let x = x.min(frame_width);
+    let y = y.min(frame_height);
+    let width = width.min(frame_width.saturating_sub(x));
+    let height = height.min(frame_height.saturating_sub(y));
+
+    if width == 0 || height == 0 {
+        return None;
+    }
+
+    // Create image buffer for the region
+    let mut region: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
+
+    for ry in 0..height {
+        for rx in 0..width {
+            let src_x = x + rx;
+            let src_y = y + ry;
+            let idx = ((src_y * frame_width + src_x) * 4) as usize;
+
+            if idx + 3 < frame_data.len() {
+                // BGRA -> RGBA
+                let b = frame_data[idx];
+                let g = frame_data[idx + 1];
+                let r = frame_data[idx + 2];
+                let a = frame_data[idx + 3];
+                region.put_pixel(rx, ry, Rgba([r, g, b, a]));
+            }
+        }
+    }
+
+    // Encode as PNG
+    let mut png_data = Vec::new();
+    let mut cursor = std::io::Cursor::new(&mut png_data);
+
+    if let Err(e) = region.write_to(&mut cursor, image::ImageFormat::Png) {
+        tracing::warn!("Failed to encode region as PNG: {}", e);
+        return None;
+    }
+
+    Some(png_data)
 }

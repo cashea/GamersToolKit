@@ -24,6 +24,19 @@ pub struct GameProfile {
     /// User-defined labeled regions from vision/OCR
     #[serde(default)]
     pub labeled_regions: Vec<LabeledRegion>,
+    /// Screen definitions for screen recognition
+    #[serde(default)]
+    pub screens: Vec<ScreenDefinition>,
+    /// Whether screen recognition is enabled for this profile
+    #[serde(default)]
+    pub screen_recognition_enabled: bool,
+    /// Interval between screen recognition checks in milliseconds
+    #[serde(default = "default_screen_check_interval")]
+    pub screen_check_interval_ms: u32,
+}
+
+fn default_screen_check_interval() -> u32 {
+    500
 }
 
 /// A labeled region that maps detected text to a user-defined name
@@ -97,6 +110,121 @@ pub struct RuleDefinition {
     pub script: String,
 }
 
+// ============================================================================
+// Screen Recognition Types
+// ============================================================================
+
+/// A screen that can be recognized within a game
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScreenDefinition {
+    /// Unique identifier for this screen
+    pub id: String,
+    /// Display name (e.g., "Main Menu", "Inventory")
+    pub name: String,
+    /// Parent screen ID for hierarchical organization (None = root level)
+    #[serde(default)]
+    pub parent_id: Option<String>,
+    /// How to match this screen
+    pub match_mode: ScreenMatchMode,
+    /// Anchor regions for anchor-based matching
+    #[serde(default)]
+    pub anchors: Vec<ScreenAnchor>,
+    /// Full screenshot template for full-screen matching
+    #[serde(default)]
+    pub full_template: Option<ScreenTemplate>,
+    /// Minimum confidence threshold for a match (0.0-1.0)
+    #[serde(default = "default_match_threshold")]
+    pub match_threshold: f32,
+    /// Whether this screen is enabled for recognition
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Priority for matching order (higher = checked first)
+    #[serde(default)]
+    pub priority: u32,
+    /// OCR zone overrides when this screen is active
+    #[serde(default)]
+    pub ocr_zone_overrides: Vec<ZoneOverride>,
+    /// Rule IDs to trigger when entering this screen
+    #[serde(default)]
+    pub rules_to_trigger: Vec<String>,
+    /// Whether to show overlay notification on screen detection
+    #[serde(default = "default_true")]
+    pub show_notification: bool,
+}
+
+fn default_match_threshold() -> f32 {
+    0.8
+}
+
+/// How to match a screen
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ScreenMatchMode {
+    /// Match using a full screenshot template
+    FullScreenshot,
+    /// Match using anchor regions (visual or text)
+    #[default]
+    Anchors,
+}
+
+/// An anchor region for screen recognition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScreenAnchor {
+    /// Unique identifier for this anchor
+    pub id: String,
+    /// Type of anchor (visual template or text OCR)
+    pub anchor_type: AnchorType,
+    /// Region bounds (x, y, width, height) as percentages of screen (0.0-1.0)
+    pub bounds: (f32, f32, f32, f32),
+    /// Template image data for visual anchors (PNG encoded)
+    #[serde(default)]
+    pub template_data: Option<Vec<u8>>,
+    /// Expected text for text anchors
+    #[serde(default)]
+    pub expected_text: Option<String>,
+    /// Similarity threshold for fuzzy text matching (0.0-1.0)
+    #[serde(default = "default_text_similarity")]
+    pub text_similarity: f32,
+    /// Whether this anchor must match (vs optional/bonus)
+    #[serde(default = "default_true")]
+    pub required: bool,
+}
+
+fn default_text_similarity() -> f32 {
+    0.8
+}
+
+/// Type of anchor for screen matching
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AnchorType {
+    /// Visual template matching
+    #[default]
+    Visual,
+    /// Text OCR matching
+    Text,
+}
+
+/// A full screen template for matching
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScreenTemplate {
+    /// PNG-encoded image data
+    pub image_data: Vec<u8>,
+    /// Original image width
+    pub width: u32,
+    /// Original image height
+    pub height: u32,
+    /// When this template was captured (ISO 8601 timestamp)
+    pub captured_at: String,
+}
+
+/// Override for an OCR zone when a screen is active
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ZoneOverride {
+    /// ID of the OCR zone to override
+    pub zone_id: String,
+    /// Whether the zone should be enabled
+    pub enabled: bool,
+}
+
 /// Load a game profile from file
 pub fn load_profile(path: &Path) -> Result<GameProfile> {
     let content = std::fs::read_to_string(path)?;
@@ -108,6 +236,43 @@ pub fn load_profile(path: &Path) -> Result<GameProfile> {
 pub fn save_profile(profile: &GameProfile, path: &Path) -> Result<()> {
     let content = serde_json::to_string_pretty(profile)?;
     std::fs::write(path, content)?;
+    Ok(())
+}
+
+/// Load all game profiles from a directory
+pub fn load_all_profiles(dir: &Path) -> Result<Vec<GameProfile>> {
+    let mut profiles = Vec::new();
+
+    if !dir.exists() {
+        return Ok(profiles);
+    }
+
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        // Only load .json files
+        if path.extension().map_or(false, |ext| ext == "json") {
+            match load_profile(&path) {
+                Ok(profile) => {
+                    profiles.push(profile);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to load profile from {:?}: {}", path, e);
+                }
+            }
+        }
+    }
+
+    Ok(profiles)
+}
+
+/// Delete a game profile file
+pub fn delete_profile(dir: &Path, profile_id: &str) -> Result<()> {
+    let profile_path = dir.join(format!("{}.json", profile_id));
+    if profile_path.exists() {
+        std::fs::remove_file(&profile_path)?;
+    }
     Ok(())
 }
 
@@ -163,6 +328,34 @@ mod tests {
                     confidence: 0.95,
                 },
             ],
+            screens: vec![
+                ScreenDefinition {
+                    id: "main_menu".to_string(),
+                    name: "Main Menu".to_string(),
+                    parent_id: None,
+                    match_mode: ScreenMatchMode::Anchors,
+                    anchors: vec![
+                        ScreenAnchor {
+                            id: "title_text".to_string(),
+                            anchor_type: AnchorType::Text,
+                            bounds: (0.4, 0.1, 0.2, 0.1),
+                            template_data: None,
+                            expected_text: Some("Test Game".to_string()),
+                            text_similarity: 0.9,
+                            required: true,
+                        },
+                    ],
+                    full_template: None,
+                    match_threshold: 0.8,
+                    enabled: true,
+                    priority: 10,
+                    ocr_zone_overrides: vec![],
+                    rules_to_trigger: vec![],
+                    show_notification: true,
+                },
+            ],
+            screen_recognition_enabled: true,
+            screen_check_interval_ms: 500,
         }
     }
 
@@ -183,6 +376,9 @@ mod tests {
         assert_eq!(profile.templates.len(), parsed.templates.len());
         assert_eq!(profile.rules.len(), parsed.rules.len());
         assert_eq!(profile.labeled_regions.len(), parsed.labeled_regions.len());
+        assert_eq!(profile.screens.len(), parsed.screens.len());
+        assert_eq!(profile.screen_recognition_enabled, parsed.screen_recognition_enabled);
+        assert_eq!(profile.screen_check_interval_ms, parsed.screen_check_interval_ms);
     }
 
     #[test]
@@ -211,6 +407,7 @@ mod tests {
             bounds: (0.5, 0.5, 0.2, 0.1),
             content_type: ContentType::Text,
             enabled: true,
+            preprocessing: None,
         };
 
         assert_eq!(region.bounds.0, 0.5); // x
@@ -306,6 +503,9 @@ mod tests {
             templates: vec![],
             rules: vec![],
             labeled_regions: vec![],
+            screens: vec![],
+            screen_recognition_enabled: false,
+            screen_check_interval_ms: 500,
         };
 
         let json = serde_json::to_string(&profile).unwrap();
@@ -316,5 +516,82 @@ mod tests {
         assert!(parsed.templates.is_empty());
         assert!(parsed.rules.is_empty());
         assert!(parsed.labeled_regions.is_empty());
+        assert!(parsed.screens.is_empty());
+        assert!(!parsed.screen_recognition_enabled);
+    }
+
+    #[test]
+    fn test_screen_definition_serialization() {
+        let screen = ScreenDefinition {
+            id: "inventory".to_string(),
+            name: "Inventory Screen".to_string(),
+            parent_id: Some("in_game".to_string()),
+            match_mode: ScreenMatchMode::Anchors,
+            anchors: vec![
+                ScreenAnchor {
+                    id: "header".to_string(),
+                    anchor_type: AnchorType::Text,
+                    bounds: (0.1, 0.05, 0.3, 0.1),
+                    template_data: None,
+                    expected_text: Some("INVENTORY".to_string()),
+                    text_similarity: 0.85,
+                    required: true,
+                },
+                ScreenAnchor {
+                    id: "icon".to_string(),
+                    anchor_type: AnchorType::Visual,
+                    bounds: (0.05, 0.05, 0.05, 0.05),
+                    template_data: Some(vec![1, 2, 3, 4]), // Dummy PNG data
+                    expected_text: None,
+                    text_similarity: 0.8,
+                    required: false,
+                },
+            ],
+            full_template: None,
+            match_threshold: 0.75,
+            enabled: true,
+            priority: 5,
+            ocr_zone_overrides: vec![
+                ZoneOverride {
+                    zone_id: "gold".to_string(),
+                    enabled: true,
+                },
+            ],
+            rules_to_trigger: vec!["inventory_opened".to_string()],
+            show_notification: false,
+        };
+
+        let json = serde_json::to_string_pretty(&screen).unwrap();
+        let parsed: ScreenDefinition = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(screen.id, parsed.id);
+        assert_eq!(screen.name, parsed.name);
+        assert_eq!(screen.parent_id, parsed.parent_id);
+        assert_eq!(screen.match_mode, parsed.match_mode);
+        assert_eq!(screen.anchors.len(), parsed.anchors.len());
+        assert_eq!(screen.ocr_zone_overrides.len(), parsed.ocr_zone_overrides.len());
+        assert_eq!(screen.rules_to_trigger.len(), parsed.rules_to_trigger.len());
+    }
+
+    #[test]
+    fn test_screen_match_mode_serialization() {
+        let modes = vec![ScreenMatchMode::FullScreenshot, ScreenMatchMode::Anchors];
+
+        for mode in modes {
+            let json = serde_json::to_string(&mode).unwrap();
+            let parsed: ScreenMatchMode = serde_json::from_str(&json).unwrap();
+            assert_eq!(mode, parsed);
+        }
+    }
+
+    #[test]
+    fn test_anchor_type_serialization() {
+        let types = vec![AnchorType::Visual, AnchorType::Text];
+
+        for anchor_type in types {
+            let json = serde_json::to_string(&anchor_type).unwrap();
+            let parsed: AnchorType = serde_json::from_str(&json).unwrap();
+            assert_eq!(anchor_type, parsed);
+        }
     }
 }

@@ -389,11 +389,14 @@ fn render_create_dialog(
                             templates: vec![],
                             rules: vec![],
                             labeled_regions: vec![],
+                            screens: vec![],
+                            screen_recognition_enabled: false,
+                            screen_check_interval_ms: 500,
                         };
 
-                        let mut state = shared_state.write();
-                        state.add_profile(new_profile.clone());
-                        view_state.selected_profile_id = Some(new_profile.id);
+                        // Queue profile creation action (will be saved to disk by DashboardApp)
+                        view_state.selected_profile_id = Some(new_profile.id.clone());
+                        view_state.pending_action = Some(ProfileAction::Create(new_profile));
                         view_state.show_create_dialog = false;
                     }
                 });
@@ -435,8 +438,8 @@ fn render_delete_confirm_dialog(
                     .fill(ThemeColors::ACCENT_ERROR)
                 ).clicked() {
                     if let Some(profile_id) = view_state.selected_profile_id.take() {
-                        let mut state = shared_state.write();
-                        state.remove_profile(&profile_id);
+                        // Queue profile deletion action (will be deleted from disk by DashboardApp)
+                        view_state.pending_action = Some(ProfileAction::Delete(profile_id));
                     }
                     view_state.show_delete_confirm = false;
                 }

@@ -23,6 +23,7 @@ pub enum DashboardView {
     Capture,
     Overlay,
     Vision,
+    Screens,
     Profiles,
     Settings,
 }
@@ -35,6 +36,7 @@ impl DashboardView {
             DashboardView::Capture => "Capture",
             DashboardView::Overlay => "Overlay",
             DashboardView::Vision => "Vision",
+            DashboardView::Screens => "Screens",
             DashboardView::Profiles => "Profiles",
             DashboardView::Settings => "Settings",
         }
@@ -47,8 +49,9 @@ impl DashboardView {
             DashboardView::Capture => "C",
             DashboardView::Overlay => "O",
             DashboardView::Vision => "V",
+            DashboardView::Screens => "S",
             DashboardView::Profiles => "P",
-            DashboardView::Settings => "S",
+            DashboardView::Settings => "G", // "Gear" for settings
         }
     }
 
@@ -59,6 +62,7 @@ impl DashboardView {
             DashboardView::Capture => DashboardViewSetting::Capture,
             DashboardView::Overlay => DashboardViewSetting::Overlay,
             DashboardView::Vision => DashboardViewSetting::Vision,
+            DashboardView::Screens => DashboardViewSetting::Vision, // Map to Vision for now
             DashboardView::Profiles => DashboardViewSetting::Profiles,
             DashboardView::Settings => DashboardViewSetting::Settings,
         }
@@ -90,6 +94,8 @@ pub struct DashboardState {
     pub overlay: OverlayViewState,
     /// Vision view state
     pub vision: VisionViewState,
+    /// Screens view state
+    pub screens: ScreensViewState,
     /// Profiles view state
     pub profiles: ProfilesViewState,
     /// Settings view state
@@ -104,6 +110,7 @@ impl Default for DashboardState {
             capture: CaptureViewState::default(),
             overlay: OverlayViewState::default(),
             vision: VisionViewState::default(),
+            screens: ScreensViewState::default(),
             profiles: ProfilesViewState::default(),
             settings: SettingsViewState::default(),
         }
@@ -415,6 +422,10 @@ pub enum ProfileAction {
     Activate(String),
     /// Deactivate the current profile
     Deactivate,
+    /// Create a new profile (includes the profile to save)
+    Create(GameProfile),
+    /// Delete a profile by ID
+    Delete(String),
 }
 
 /// Profiles view state
@@ -454,4 +465,53 @@ pub enum SettingsSection {
     Capture,
     Overlay,
     Performance,
+}
+
+/// Screen recognition view state
+#[derive(Default)]
+pub struct ScreensViewState {
+    /// Currently selected screen ID in the hierarchy tree
+    pub selected_screen_id: Option<String>,
+    /// Whether to show the add screen dialog
+    pub show_add_dialog: bool,
+    /// Whether to show the delete confirmation dialog
+    pub show_delete_confirm: bool,
+    /// New screen name (for add dialog)
+    pub new_screen_name: String,
+    /// New screen parent ID (for add dialog)
+    pub new_screen_parent_id: Option<String>,
+    /// New screen match mode (for add dialog)
+    pub new_screen_match_mode: crate::storage::profiles::ScreenMatchMode,
+    /// Whether screen recognition is running
+    pub recognition_running: bool,
+    /// Pending request to capture full screen template
+    pub pending_full_capture: bool,
+    /// Pending request to capture visual anchor
+    pub pending_anchor_capture: Option<String>, // Screen ID to add anchor to
+    /// Pending request to capture text anchor
+    pub pending_text_anchor_capture: Option<String>, // Screen ID to add anchor to
+    /// Screens marked as dirty (need saving)
+    pub screens_dirty: bool,
+    /// Error message to display
+    pub error_message: Option<String>,
+    /// Preview texture for current screen template
+    pub preview_texture: Option<egui::TextureHandle>,
+    /// Pending text anchor waiting for user confirmation: (screen_id, detected_text, bounds)
+    pub pending_text_for_anchor: Option<(String, String, (f32, f32, f32, f32))>,
+    /// Editable text field for text anchor confirmation dialog
+    pub editing_text_anchor_text: String,
+}
+
+impl std::fmt::Debug for ScreensViewState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ScreensViewState")
+            .field("selected_screen_id", &self.selected_screen_id)
+            .field("show_add_dialog", &self.show_add_dialog)
+            .field("show_delete_confirm", &self.show_delete_confirm)
+            .field("new_screen_name", &self.new_screen_name)
+            .field("recognition_running", &self.recognition_running)
+            .field("screens_dirty", &self.screens_dirty)
+            .field("has_preview_texture", &self.preview_texture.is_some())
+            .finish()
+    }
 }
