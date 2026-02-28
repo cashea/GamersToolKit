@@ -13,6 +13,7 @@ mod shared;
 mod dashboard;
 mod hotkey;
 mod app;
+mod mcp;
 
 use anyhow::Result;
 use clap::Parser;
@@ -23,7 +24,7 @@ use tracing_subscriber::FmtSubscriber;
 
 use crate::analysis::Tip;
 use crate::config::AppConfig;
-use crate::overlay::{list_monitors, OverlayConfig, OverlayManager};
+use crate::overlay::{list_monitors, OverlayManager};
 use crate::shared::SharedAppState;
 
 /// GamersToolKit - Real-time game analysis overlay
@@ -46,17 +47,29 @@ struct Args {
     /// Run in overlay-only mode (no dashboard window)
     #[arg(long)]
     overlay_only: bool,
+
+    /// Run in MCP (Model Context Protocol) Server mode
+    #[arg(long)]
+    mcp: bool,
+
+    /// Send a custom test message via the overlay to the screen
+    #[arg(long)]
+    test_msg: Option<String>,
 }
 
-fn main() -> Result<()> {
-    // Initialize logging
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::DEBUG)
-        .with_writer(std::io::stderr)
-        .finish();
-    tracing::subscriber::set_global_default(subscriber)?;
-
+#[tokio::main]
+async fn main() -> Result<()> {
     let args = Args::parse();
+
+    // Initialize logging only if we are NOT running as an MCP server.
+    // MCP uses stdio for JSON-RPC communication; logging to stdout will corrupt it.
+    if !args.mcp {
+        let subscriber = FmtSubscriber::builder()
+            .with_max_level(Level::DEBUG)
+            .with_writer(std::io::stderr)
+            .finish();
+        tracing::subscriber::set_global_default(subscriber)?;
+    }
 
     // List monitors mode
     if args.list_monitors {
@@ -81,9 +94,11 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    info!("GamersToolKit starting...");
-    info!("Read-only mode: Screen capture and analysis only");
-    info!("No game memory access, no input injection");
+    if !args.mcp {
+        info!("GamersToolKit starting...");
+        info!("Read-only mode: Screen capture and analysis only");
+        info!("No game memory access, no input injection");
+    }
 
     // Load or create configuration
     let config = load_or_create_config();
@@ -91,15 +106,21 @@ fn main() -> Result<()> {
     // Create shared state
     let shared_state = Arc::new(RwLock::new(SharedAppState::new(config)));
 
-    if args.overlay_only {
-        // Run in overlay-only mode
-        run_overlay_only(args.monitor, shared_state)?;
+    if args.mcp {
+        // Run as an MCP Server
+        let server = mcp::McpServer::new(Arc::clone(&shared_state));
+        server.run().await?;
+    } else if args.overlay_only || args.test_msg.is_some() {
+        // Run in overlay-only mode (also handle --test-msg here)
+        run_overlay_only(args.monitor, shared_state, args.test_msg)?;
     } else {
         // Run in dashboard mode (default)
         run_with_dashboard(args.monitor, shared_state)?;
     }
 
-    info!("GamersToolKit shutdown complete");
+    if !args.mcp {
+        info!("GamersToolKit shutdown complete");
+    }
 
     Ok(())
 }
@@ -120,7 +141,7 @@ fn load_or_create_config() -> AppConfig {
 }
 
 /// Run in overlay-only mode
-fn run_overlay_only(monitor: usize, shared_state: Arc<RwLock<SharedAppState>>) -> Result<()> {
+fn run_overlay_only(monitor: usize, shared_state: Arc<RwLock<SharedAppState>>, custom_test_msg: Option<String>) -> Result<()> {
     info!("Running in overlay-only mode");
 
     // Configure overlay for selected monitor
@@ -142,26 +163,37 @@ fn run_overlay_only(monitor: usize, shared_state: Arc<RwLock<SharedAppState>>) -
         state.runtime.overlay_visible = true;
     }
 
-    // Send a demo tip after a short delay
+    // Send demo tips (or custom test message) after a short delay
     let tip_sender = manager.tip_sender();
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(2));
-        let _ = tip_sender.send(Tip {
-            id: "demo_1".to_string(),
-            message: "GamersToolKit overlay is working!".to_string(),
-            priority: 50,
-            duration_ms: Some(5000),
-            play_sound: false,
-        });
+        
+        if let Some(msg) = custom_test_msg {
+            let _ = tip_sender.send(Tip {
+                id: "custom_test_msg".to_string(),
+                message: msg,
+                priority: 100,
+                duration_ms: Some(8000),
+                play_sound: false,
+            });
+        } else {
+            let _ = tip_sender.send(Tip {
+                id: "demo_1".to_string(),
+                message: "GamersToolKit overlay is working!".to_string(),
+                priority: 50,
+                duration_ms: Some(5000),
+                play_sound: false,
+            });
 
-        std::thread::sleep(std::time::Duration::from_secs(3));
-        let _ = tip_sender.send(Tip {
-            id: "demo_2".to_string(),
-            message: "Press ESC or close the window to exit".to_string(),
-            priority: 25,
-            duration_ms: Some(8000),
-            play_sound: false,
-        });
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            let _ = tip_sender.send(Tip {
+                id: "demo_2".to_string(),
+                message: "Press ESC or close the window to exit".to_string(),
+                priority: 25,
+                duration_ms: Some(8000),
+                play_sound: false,
+            });
+        }
     });
 
     info!("Starting overlay... (Press ESC to exit)");

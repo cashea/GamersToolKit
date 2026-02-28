@@ -253,9 +253,13 @@ impl HotkeyManager {
     }
 
     /// Process pending hotkey events
-    /// Returns the type of hotkey event that occurred
     pub fn poll_events(&self) -> HotkeyEvent {
         if let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
+            // Only process key press events, ignore key releases
+            if event.state != global_hotkey::HotKeyState::Pressed {
+                return HotkeyEvent::None;
+            }
+
             if Some(event.id) == self.toggle_hotkey_id {
                 // Toggle overlay visibility
                 let mut state = self.shared_state.write();

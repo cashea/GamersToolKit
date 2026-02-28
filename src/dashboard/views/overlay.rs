@@ -341,7 +341,16 @@ fn render_preview_column(
             ui.add_space(8.0);
 
             if ui.button("Send Test Tip").clicked() {
-                // Will be connected to tip sender
+                let mut state = shared_state.write();
+                state.runtime.send_test_tip = true;
+                
+                let message = if view_state.preview_tip_text.is_empty() {
+                    "This is a test tip from GamersToolKit!".to_string()
+                } else {
+                    view_state.preview_tip_text.clone()
+                };
+                
+                state.runtime.test_tip_message = Some((message, view_state.preview_tip_priority));
             }
         });
 }

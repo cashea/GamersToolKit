@@ -903,24 +903,8 @@ fn get_style_for_priority(priority: u32, styles: &PriorityStyles) -> &TipStyle {
 
 /// Calculate opacity with fade-in/fade-out effects
 fn calculate_opacity(tip: &DisplayTip, base_opacity: f32) -> f32 {
-    let age = tip.age_secs();
-
-    // Fade in during first 0.3 seconds
-    let fade_in = (age / 0.3).min(1.0);
-
-    // Fade out during last 0.5 seconds before expiry
-    let fade_out = if let Some(expires_at) = tip.expires_at {
-        let remaining = expires_at.saturating_duration_since(Instant::now()).as_secs_f32();
-        if remaining < 0.5 {
-            remaining / 0.5
-        } else {
-            1.0
-        }
-    } else {
-        1.0
-    };
-
-    base_opacity * fade_in * fade_out
+    // Simplified calculation for debugging to ensure it stays visible
+    if base_opacity > 0.8 { base_opacity } else { 0.8 }
 }
 
 /// Draw a single tip

@@ -84,6 +84,11 @@ clap = { version = "4.5", features = ["derive"] }
 
 # Global hotkeys
 global-hotkey = "0.6"
+rust-mcp-sdk = "0.8.3"
+tokio-util = "0.7.18"
+rust-mcp-macros = "0.8.1"
+rust-mcp-schema = "0.9.5"
+async-trait = "0.1.89"
 
 [dev-dependencies]
 tempfile = "3.15"

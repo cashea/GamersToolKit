@@ -157,6 +157,8 @@ pub struct RuntimeState {
     pub overlay_command: Option<OverlayCommand>,
     /// Request to send a test tip
     pub send_test_tip: bool,
+    /// Custom message for the test tip
+    pub test_tip_message: Option<(String, u32)>,
     // Screen Recognition State
     /// Currently detected screen (if screen recognition is active)
     pub current_screen: Option<ScreenMatch>,

@@ -1098,48 +1098,107 @@ impl DashboardApp {
 
     /// Process test tip request
     fn process_test_tip(&mut self) {
-        let should_send = {
+        let (should_send, custom_message) = {
             let mut state = self.shared_state.write();
             let send = state.runtime.send_test_tip;
+            let custom_message = state.runtime.test_tip_message.take();
             state.runtime.send_test_tip = false;
-            send
+            (send, custom_message)
         };
 
         if should_send {
+            // Auto-start overlay if not running so the test tip can be seen
+            if self.overlay_manager.is_none() {
+                tracing::info!("Auto-starting overlay for test tip");
+                if let Err(e) = self.start_overlay() {
+                    tracing::error!("Failed to start overlay for test tip: {}", e);
+                    let mut state = self.shared_state.write();
+                    state.runtime.set_error(format!("Failed to start overlay: {}", e));
+                    return;
+                }
+                // Small sleep to ensure the overlay thread has initialized before sending tips
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+
             if let Some(manager) = &self.overlay_manager {
-                let tip = Tip {
-                    id: format!("test_{}", std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis()),
-                    message: "This is a test tip from GamersToolKit!".to_string(),
-                    priority: 50,
-                    duration_ms: Some(5000),
-                    play_sound: false,
+                // Get candidate screens from active profile
+                let candidate_screens: Vec<String> = {
+                    let state = self.shared_state.read();
+                    if let Some(profile) = state.active_profile() {
+                        profile.screens.iter().map(|s| s.name.clone()).collect()
+                    } else {
+                        Vec::new()
+                    }
                 };
-                manager.show_tip(tip);
+
+                // Use the custom message from the dashboard if provided, otherwise default to a generic success tip
+                let (base_msg, priority) = if let Some((msg, prio)) = custom_message {
+                    (msg, prio)
+                } else {
+                    ("This is a test tip from GamersToolKit!".to_string(), 50)
+                };
+
+                if candidate_screens.is_empty() {
+                    let tip = Tip {
+                        id: format!("test_{}", std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis()),
+                        message: base_msg,
+                        priority,
+                        duration_ms: Some(5000),
+                        play_sound: false,
+                    };
+                    manager.show_tip(tip);
+                } else {
+                    for (i, screen_name) in candidate_screens.iter().enumerate() {
+                        let tip = Tip {
+                            id: format!("test_{}_{}", i, std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis()),
+                            message: format!("[{}]: {}", screen_name, base_msg),
+                            priority,
+                            duration_ms: Some(5000),
+                            play_sound: false,
+                        };
+                        manager.show_tip(tip);
+                    }
+                }
 
                 // Update tips displayed count
                 let mut state = self.shared_state.write();
-                state.runtime.tips_displayed += 1;
+                state.runtime.tips_displayed += std::cmp::max(1, candidate_screens.len());
             }
         }
     }
 
     /// Poll for global hotkey events
     fn poll_hotkeys(&mut self) {
-        if let Some(ref hotkey_manager) = self.hotkey_manager {
-            use crate::hotkey::HotkeyEvent;
+        use crate::hotkey::HotkeyEvent;
 
-            match hotkey_manager.poll_events() {
-                HotkeyEvent::None => {}
-                HotkeyEvent::ToggleOverlay => {
-                    // Already handled in poll_events
+        let event = if let Some(ref hotkey_manager) = self.hotkey_manager {
+            hotkey_manager.poll_events()
+        } else {
+            HotkeyEvent::None
+        };
+
+        match event {
+            HotkeyEvent::None => {}
+            HotkeyEvent::ToggleOverlay => {
+                // Auto-start overlay if it's not running
+                if self.overlay_manager.is_none() {
+                    tracing::info!("Auto-starting overlay on toggle hotkey");
+                    if let Err(e) = self.start_overlay() {
+                        tracing::error!("Failed to auto-start overlay: {}", e);
+                        let mut state = self.shared_state.write();
+                        state.runtime.set_error(e);
+                    }
                 }
-                HotkeyEvent::EnterZoneSelection => {
-                    // Request zone selection mode
-                    self.dashboard_state.vision.pending_zone_selection_mode = true;
-                }
+            }
+            HotkeyEvent::EnterZoneSelection => {
+                // Request zone selection mode
+                self.dashboard_state.vision.pending_zone_selection_mode = true;
             }
         }
     }
