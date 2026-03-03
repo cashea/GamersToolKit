@@ -4,10 +4,7 @@
 //! game profiles, capture configuration, and overlay customization.
 
 pub mod app;
+pub mod components;
 pub mod state;
 pub mod theme;
 pub mod views;
-pub mod components;
-
-pub use app::DashboardApp;
-pub use state::{DashboardView, DashboardState};

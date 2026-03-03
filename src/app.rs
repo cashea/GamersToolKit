@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Application Coordinator
 //!
 //! Manages the lifecycle of both the dashboard and overlay windows,
@@ -33,8 +34,8 @@ impl GamersToolKitApp {
     /// Create a new application coordinator
     pub fn new(config: AppConfig) -> Result<Self> {
         let shared_state = Arc::new(RwLock::new(SharedAppState::new(config)));
-        let (to_overlay, overlay_rx) = unbounded();
-        let (overlay_tx, from_overlay) = unbounded();
+        let (to_overlay, _overlay_rx) = unbounded();
+        let (_overlay_tx, from_overlay) = unbounded();
 
         Ok(Self {
             shared_state,

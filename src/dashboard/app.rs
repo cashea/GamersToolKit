@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Dashboard application entry point
 
 use eframe::egui;
@@ -5,34 +6,24 @@ use parking_lot::{Mutex, RwLock};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::sync::mpsc::{self, Receiver, Sender};
 
 use crate::analysis::Tip;
 use crate::capture::{CaptureTarget, ScreenCapture};
 use crate::config::WindowState;
 use crate::dashboard::components::render_sidebar;
-use crate::dashboard::state::{DashboardState, DashboardView};
+use crate::dashboard::state::ZoneOcrResult;
+use crate::dashboard::state::{AutoConfigureStep, DashboardState, DashboardView};
 use crate::dashboard::theme;
 use crate::dashboard::views::{
-    render_capture_view, render_home_view, render_overlay_view,
-    render_profiles_view, render_settings_view, render_vision_view,
+    render_capture_view, render_home_view, render_overlay_view, render_profiles_view,
+    render_screens_view, render_settings_view, render_vision_view,
 };
 use crate::hotkey::HotkeyManager;
-use crate::overlay::OverlayManager;
+use crate::overlay::{OverlayManager, ZoneSelectionResult};
 use crate::shared::SharedAppState;
-use crate::storage::profiles::GameProfile;
-use crate::vision::{VisionPipeline, ModelManager, ModelType, OcrGranularity};
-use crate::dashboard::state::OcrResultDisplay;
+use crate::storage::profiles::{ContentType, GameProfile};
+use crate::vision::{ModelManager, ModelType, ScreenRecognizer, VisionPipeline};
 use std::thread::JoinHandle;
-
-/// Preprocessed data from background thread, ready for OCR
-struct PreprocessedFrame {
-    data: Vec<u8>,
-    width: u32,
-    height: u32,
-    scale_factor: u32,
-    start_time: Instant,
-}
 
 /// The main dashboard application
 pub struct DashboardApp {
@@ -78,8 +69,10 @@ pub struct DashboardApp {
     last_synced_vision: Option<crate::config::VisionSettings>,
     /// Last synced dashboard view (for change detection)
     last_synced_view: Option<DashboardView>,
-    /// Channel to receive preprocessed frames from background thread
-    preprocess_rx: Option<Receiver<PreprocessedFrame>>,
+    /// Screen recognizer for detecting game screens
+    screen_recognizer: ScreenRecognizer,
+    /// Last time screen recognition was run
+    last_screen_check: Instant,
 }
 
 /// Helper for calculating FPS
@@ -108,6 +101,9 @@ impl DashboardApp {
                 if let Err(e) = manager.register_toggle_hotkey() {
                     tracing::warn!("Failed to register toggle hotkey: {}", e);
                 }
+                if let Err(e) = manager.register_zone_selection_hotkey() {
+                    tracing::warn!("Failed to register zone selection hotkey: {}", e);
+                }
                 Some(manager)
             }
             Err(e) => {
@@ -131,16 +127,45 @@ impl DashboardApp {
             (state.config.vision.clone(), state.config.dashboard.clone())
         };
 
+        // Load all profiles from disk into shared state
+        if let Some(ref dir) = profiles_dir {
+            match crate::storage::profiles::load_all_profiles(dir) {
+                Ok(profiles) => {
+                    let mut state = shared_state.write();
+                    for profile in profiles {
+                        state.add_profile(profile);
+                    }
+                    tracing::info!("Loaded {} profiles from disk", state.profiles.len());
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to load profiles: {}", e);
+                }
+            }
+        }
+
         // Load or create profile based on saved active_profile_id
-        let (active_profile, initial_labels) = Self::load_profile_by_id(
+        let (active_profile, initial_zones) = Self::load_profile_by_id(
             &profiles_dir,
             dashboard_settings.active_profile_id.as_deref(),
         );
 
-        let mut dashboard_state = DashboardState::default();
+        // Initialize screen recognizer and load screens from profile
+        let mut screen_recognizer = ScreenRecognizer::new();
+        if let Some(ref profile) = active_profile {
+            if !profile.screens.is_empty() {
+                screen_recognizer.load_screens(profile.screens.clone());
+                tracing::info!(
+                    "Loaded {} screens for recognition from profile '{}'",
+                    profile.screens.len(),
+                    profile.name
+                );
+            }
+        }
 
-        // Restore persisted dashboard view
-        dashboard_state.current_view = DashboardView::from_setting(dashboard_settings.last_view);
+        let mut dashboard_state = DashboardState {
+            current_view: DashboardView::from_setting(dashboard_settings.last_view),
+            ..Default::default()
+        };
 
         // Restore persisted vision settings
         dashboard_state.vision.selected_backend = vision_settings.backend;
@@ -153,8 +178,8 @@ impl DashboardApp {
         dashboard_state.vision.auto_run_ocr = vision_settings.auto_run_ocr;
         dashboard_state.vision.preprocessing = vision_settings.preprocessing.clone();
 
-        // Load labels from profile into vision state
-        dashboard_state.vision.labeled_regions = initial_labels;
+        // Load zones from profile into vision state
+        dashboard_state.vision.ocr_zones = initial_zones;
 
         tracing::info!(
             "Restored settings: view={:?}, backend={:?}, granularity={:?}",
@@ -185,15 +210,20 @@ impl DashboardApp {
             last_profile_save: Instant::now(),
             last_synced_vision: Some(vision_settings),
             last_synced_view: Some(DashboardView::from_setting(dashboard_settings.last_view)),
-            preprocess_rx: None,
+            screen_recognizer,
+            last_screen_check: Instant::now(),
         }
     }
 
     /// Load a profile by ID, or create default if not found
+    /// Returns (profile, ocr_zones)
     fn load_profile_by_id(
         profiles_dir: &Option<PathBuf>,
         profile_id: Option<&str>,
-    ) -> (Option<GameProfile>, Vec<crate::storage::profiles::LabeledRegion>) {
+    ) -> (
+        Option<GameProfile>,
+        Vec<crate::storage::profiles::OcrRegion>,
+    ) {
         let Some(ref dir) = profiles_dir else {
             return (None, vec![]);
         };
@@ -205,13 +235,13 @@ impl DashboardApp {
         if profile_path.exists() {
             match crate::storage::profiles::load_profile(&profile_path) {
                 Ok(profile) => {
-                    let labels = profile.labeled_regions.clone();
+                    let zones = profile.ocr_regions.clone();
                     tracing::info!(
-                        "Loaded profile '{}' with {} labels",
+                        "Loaded profile '{}' with {} zones",
                         profile.name,
-                        labels.len()
+                        zones.len()
                     );
-                    return (Some(profile), labels);
+                    return (Some(profile), zones);
                 }
                 Err(e) => {
                     tracing::warn!("Failed to load profile '{}': {}", profile_id, e);
@@ -225,12 +255,12 @@ impl DashboardApp {
             if default_path.exists() {
                 match crate::storage::profiles::load_profile(&default_path) {
                     Ok(profile) => {
-                        let labels = profile.labeled_regions.clone();
+                        let zones = profile.ocr_regions.clone();
                         tracing::info!(
-                            "Loaded fallback default profile with {} labels",
-                            labels.len()
+                            "Loaded fallback default profile with {} zones",
+                            zones.len()
                         );
-                        return (Some(profile), labels);
+                        return (Some(profile), zones);
                     }
                     Err(e) => {
                         tracing::warn!("Failed to load default profile: {}", e);
@@ -249,6 +279,9 @@ impl DashboardApp {
             templates: vec![],
             rules: vec![],
             labeled_regions: vec![],
+            screens: vec![],
+            screen_recognition_enabled: false,
+            screen_check_interval_ms: 500,
         };
 
         let default_path = dir.join("default.json");
@@ -259,6 +292,115 @@ impl DashboardApp {
         }
 
         (Some(profile), vec![])
+    }
+
+    /// Activate a profile by ID
+    /// Saves current zones to old profile, loads new profile's zones
+    fn activate_profile(&mut self, profile_id: &str) {
+        // First, save current zones to the currently active profile (if any)
+        self.save_current_zones_to_profile();
+
+        // Find the profile to activate
+        let profile_to_activate = {
+            let state = self.shared_state.read();
+            state.profiles.iter().find(|p| p.id == profile_id).cloned()
+        };
+
+        let Some(profile) = profile_to_activate else {
+            tracing::warn!("Cannot activate profile '{}': not found", profile_id);
+            return;
+        };
+
+        // Load zones from the new profile
+        let zones = profile.ocr_regions.clone();
+        let zone_count = zones.len();
+        let profile_name = profile.name.clone();
+        let profile_id_owned = profile.id.clone();
+
+        // Update dashboard state with new zones
+        self.dashboard_state.vision.ocr_zones = zones;
+        self.dashboard_state.vision.zone_ocr_results.clear();
+        self.dashboard_state.vision.zones_dirty = false;
+
+        // Update active profile reference
+        self.active_profile = Some(profile);
+
+        // Update shared state
+        {
+            let mut state = self.shared_state.write();
+            state.active_profile_id = Some(profile_id_owned.clone());
+            state.config.dashboard.active_profile_id = Some(profile_id_owned);
+        }
+
+        // Mark config for save
+        self.pending_save = true;
+        self.last_auto_save = Instant::now();
+
+        // Reload screens for screen recognition
+        self.reload_screens_from_profile();
+
+        tracing::info!(
+            "Activated profile '{}' with {} zones",
+            profile_name,
+            zone_count
+        );
+    }
+
+    /// Deactivate the current profile
+    /// Saves current zones and clears active profile
+    fn deactivate_profile(&mut self) {
+        // First, save current zones to the currently active profile
+        self.save_current_zones_to_profile();
+
+        let old_profile_name = self.active_profile.as_ref().map(|p| p.name.clone());
+
+        // Clear active profile
+        self.active_profile = None;
+
+        // Update shared state
+        {
+            let mut state = self.shared_state.write();
+            state.active_profile_id = None;
+            state.config.dashboard.active_profile_id = None;
+        }
+
+        // Clear zones from vision state
+        self.dashboard_state.vision.ocr_zones.clear();
+        self.dashboard_state.vision.zone_ocr_results.clear();
+        self.dashboard_state.vision.zones_dirty = false;
+
+        // Mark config for save
+        self.pending_save = true;
+        self.last_auto_save = Instant::now();
+
+        // Clear screens from recognizer
+        self.reload_screens_from_profile();
+
+        if let Some(name) = old_profile_name {
+            tracing::info!("Deactivated profile '{}'", name);
+        }
+    }
+
+    /// Save current zones to the active profile (helper method)
+    fn save_current_zones_to_profile(&mut self) {
+        if let (Some(ref mut profile), Some(ref profiles_dir)) =
+            (&mut self.active_profile, &self.profiles_dir)
+        {
+            // Update profile with current zones
+            profile.ocr_regions = self.dashboard_state.vision.ocr_zones.clone();
+
+            // Save to disk
+            let profile_path = profiles_dir.join(format!("{}.json", profile.id));
+            if let Err(e) = crate::storage::profiles::save_profile(profile, &profile_path) {
+                tracing::error!("Failed to save zones to profile '{}': {}", profile.name, e);
+            } else {
+                tracing::debug!(
+                    "Saved {} zones to profile '{}' before switching",
+                    profile.ocr_regions.len(),
+                    profile.name
+                );
+            }
+        }
     }
 
     /// Start screen capture
@@ -305,11 +447,18 @@ impl DashboardApp {
 
     /// Update capture FPS by polling for frames
     fn update_capture_stats(&mut self) {
-        let mut capture_guard = self.capture_manager.lock();
+        let capture_guard = self.capture_manager.lock();
         if let Some(ref capture) = *capture_guard {
             // Try to get frames without blocking to calculate FPS
-            while capture.try_next_frame().is_some() {
+            let mut latest_frame = None;
+            while let Some(frame) = capture.try_next_frame() {
                 self.frame_counter.frames_this_second += 1;
+                latest_frame = Some(frame);
+            }
+            // Store the most recent frame for MCP screenshot tool
+            if let Some(frame) = latest_frame {
+                self.shared_state.write().runtime.last_captured_frame =
+                    Some(std::sync::Arc::new(frame));
             }
 
             // Update FPS every second
@@ -335,7 +484,11 @@ impl DashboardApp {
 
     /// Check if capture is running
     pub fn is_capturing(&self) -> bool {
-        self.capture_manager.lock().as_ref().map(|c| c.is_running()).unwrap_or(false)
+        self.capture_manager
+            .lock()
+            .as_ref()
+            .map(|c| c.is_running())
+            .unwrap_or(false)
     }
 
     /// Get the capture manager for external use
@@ -467,45 +620,79 @@ impl DashboardApp {
         }
     }
 
-    /// Auto-save profile labels if they've been modified (debounced)
-    /// Also handles immediate save when pending_profile_save is set
-    fn auto_save_profile_labels(&mut self) {
-        const LABEL_SAVE_DELAY: Duration = Duration::from_secs(2);
+    /// Auto-save profile zones if they've been modified (debounced)
+    fn auto_save_profile_zones(&mut self) {
+        const ZONE_SAVE_DELAY: Duration = Duration::from_secs(2);
 
-        // Check for immediate save request
-        let immediate_save = self.dashboard_state.vision.pending_profile_save;
-        if immediate_save {
-            self.dashboard_state.vision.pending_profile_save = false;
-        }
+        let zones_dirty = self.dashboard_state.vision.zones_dirty;
 
-        if !self.dashboard_state.vision.labels_dirty && !immediate_save {
+        if !zones_dirty {
             return;
         }
 
-        // Only save if enough time has passed since last change (unless immediate save requested)
-        if !immediate_save && self.last_profile_save.elapsed() < LABEL_SAVE_DELAY {
+        // Only save if enough time has passed since last change
+        if self.last_profile_save.elapsed() < ZONE_SAVE_DELAY {
             return;
         }
 
         if let (Some(ref mut profile), Some(ref profiles_dir)) =
             (&mut self.active_profile, &self.profiles_dir)
         {
-            // Update profile with current labels from vision state
-            profile.labeled_regions = self.dashboard_state.vision.labeled_regions.clone();
+            // Update profile with current zones from vision state
+            profile.ocr_regions = self.dashboard_state.vision.ocr_zones.clone();
 
             let profile_path = profiles_dir.join(format!("{}.json", profile.id));
             if let Err(e) = crate::storage::profiles::save_profile(profile, &profile_path) {
-                tracing::error!("Failed to save profile labels: {}", e);
+                tracing::error!("Failed to save profile: {}", e);
             } else {
                 tracing::info!(
-                    "Saved {} labels to profile '{}'",
-                    profile.labeled_regions.len(),
+                    "Saved {} zones to profile '{}'",
+                    profile.ocr_regions.len(),
                     profile.name
                 );
-                self.dashboard_state.vision.labels_dirty = false;
+                self.dashboard_state.vision.zones_dirty = false;
                 self.last_profile_save = Instant::now();
             }
         }
+    }
+
+    /// Sync screens from shared state to profile and recognizer when modified
+    fn sync_profile_screens(&mut self) {
+        if !self.dashboard_state.screens.screens_dirty {
+            return;
+        }
+
+        // Get updated screens from shared state
+        let updated_screens = {
+            let shared = self.shared_state.read();
+            shared.active_profile().map(|p| p.screens.clone())
+        };
+
+        if let Some(screens) = updated_screens {
+            // Update local profile
+            if let Some(ref mut profile) = self.active_profile {
+                profile.screens = screens.clone();
+
+                // Save profile to disk
+                if let Some(ref profiles_dir) = self.profiles_dir {
+                    let profile_path = profiles_dir.join(format!("{}.json", profile.id));
+                    if let Err(e) = crate::storage::profiles::save_profile(profile, &profile_path) {
+                        tracing::error!("Failed to save profile screens: {}", e);
+                    } else {
+                        tracing::info!(
+                            "Saved {} screens to profile '{}'",
+                            screens.len(),
+                            profile.name
+                        );
+                    }
+                }
+
+                // Reload screens into recognizer
+                self.screen_recognizer.load_screens(screens);
+            }
+        }
+
+        self.dashboard_state.screens.screens_dirty = false;
     }
 
     /// Save window state periodically (debounced, only when changed)
@@ -561,8 +748,12 @@ impl DashboardApp {
         let current_vision = crate::config::VisionSettings {
             backend: self.dashboard_state.vision.selected_backend,
             granularity: match self.dashboard_state.vision.ocr_granularity {
-                crate::dashboard::state::OcrGranularity::Word => crate::vision::OcrGranularity::Word,
-                crate::dashboard::state::OcrGranularity::Line => crate::vision::OcrGranularity::Line,
+                crate::dashboard::state::OcrGranularity::Word => {
+                    crate::vision::OcrGranularity::Word
+                }
+                crate::dashboard::state::OcrGranularity::Line => {
+                    crate::vision::OcrGranularity::Line
+                }
             },
             match_threshold: self.dashboard_state.vision.match_threshold,
             show_bounding_boxes: self.dashboard_state.vision.show_bounding_boxes,
@@ -579,7 +770,6 @@ impl DashboardApp {
                     || last.granularity != current_vision.granularity
                     || (last.match_threshold - current_vision.match_threshold).abs() > 0.001
                     || last.show_bounding_boxes != current_vision.show_bounding_boxes
-                    || last.auto_run_ocr != current_vision.auto_run_ocr
                     || last.preprocessing != current_vision.preprocessing
             }
             None => true,
@@ -634,8 +824,12 @@ impl eframe::App for DashboardApp {
         // Process commands from UI
         self.process_capture_commands();
         self.process_overlay_commands();
+        self.process_profile_commands();
         self.process_test_tip();
         self.process_vision_commands();
+        self.process_zone_commands();
+        self.process_auto_configure();
+        self.process_screen_recognition();
 
         // Sync overlay config changes to running overlay
         self.sync_overlay_config();
@@ -653,7 +847,10 @@ impl eframe::App for DashboardApp {
         self.auto_save_settings();
 
         // Auto-save profile labels if needed
-        self.auto_save_profile_labels();
+        self.auto_save_profile_zones();
+
+        // Sync profile screens if modified
+        self.sync_profile_screens();
 
         // Save window state periodically
         self.save_window_state(ctx);
@@ -665,7 +862,11 @@ impl eframe::App for DashboardApp {
         }
 
         // Request continuous repaint when capturing or when there are pending saves
-        if self.is_capturing() || self.pending_save || self.dashboard_state.vision.labels_dirty {
+        if self.is_capturing()
+            || self.pending_save
+            || self.dashboard_state.vision.zones_dirty
+            || self.dashboard_state.screens.screens_dirty
+        {
             ctx.request_repaint();
         }
 
@@ -680,56 +881,53 @@ impl eframe::App for DashboardApp {
         // Main content panel
         egui::CentralPanel::default().show(ctx, |ui| {
             // Add padding around content
-            egui::Frame::none()
-                .inner_margin(24.0)
-                .show(ui, |ui| {
-                    match self.dashboard_state.current_view {
-                        DashboardView::Home => {
-                            render_home_view(
-                                ui,
-                                &mut self.dashboard_state.home,
-                                &self.shared_state,
-                            );
-                        }
-                        DashboardView::Capture => {
-                            render_capture_view(
-                                ui,
-                                &mut self.dashboard_state.capture,
-                                &self.shared_state,
-                                &self.capture_manager,
-                            );
-                        }
-                        DashboardView::Overlay => {
-                            render_overlay_view(
-                                ui,
-                                &mut self.dashboard_state.overlay,
-                                &self.shared_state,
-                            );
-                        }
-                        DashboardView::Vision => {
-                            render_vision_view(
-                                ui,
-                                &mut self.dashboard_state.vision,
-                                &self.shared_state,
-                                &self.capture_manager,
-                            );
-                        }
-                        DashboardView::Profiles => {
-                            render_profiles_view(
-                                ui,
-                                &mut self.dashboard_state.profiles,
-                                &self.shared_state,
-                            );
-                        }
-                        DashboardView::Settings => {
-                            render_settings_view(
-                                ui,
-                                &mut self.dashboard_state.settings,
-                                &self.shared_state,
-                            );
-                        }
+            egui::Frame::none().inner_margin(24.0).show(ui, |ui| {
+                match self.dashboard_state.current_view {
+                    DashboardView::Home => {
+                        render_home_view(ui, &mut self.dashboard_state.home, &self.shared_state);
                     }
-                });
+                    DashboardView::Capture => {
+                        render_capture_view(
+                            ui,
+                            &mut self.dashboard_state.capture,
+                            &self.shared_state,
+                            &self.capture_manager,
+                        );
+                    }
+                    DashboardView::Overlay => {
+                        render_overlay_view(
+                            ui,
+                            &mut self.dashboard_state.overlay,
+                            &self.shared_state,
+                        );
+                    }
+                    DashboardView::Vision => {
+                        render_vision_view(
+                            ui,
+                            &mut self.dashboard_state.vision,
+                            &self.shared_state,
+                            &self.capture_manager,
+                        );
+                    }
+                    DashboardView::Screens => {
+                        render_screens_view(ui, &mut self.dashboard_state, &self.shared_state);
+                    }
+                    DashboardView::Profiles => {
+                        render_profiles_view(
+                            ui,
+                            &mut self.dashboard_state.profiles,
+                            &self.shared_state,
+                        );
+                    }
+                    DashboardView::Settings => {
+                        render_settings_view(
+                            ui,
+                            &mut self.dashboard_state.settings,
+                            &self.shared_state,
+                        );
+                    }
+                }
+            });
         });
     }
 
@@ -747,19 +945,19 @@ impl eframe::App for DashboardApp {
             }
         }
 
-        // Save any pending profile label changes
-        if self.dashboard_state.vision.labels_dirty {
+        // Save any pending zone changes
+        if self.dashboard_state.vision.zones_dirty {
             if let (Some(ref mut profile), Some(ref profiles_dir)) =
                 (&mut self.active_profile, &self.profiles_dir)
             {
-                profile.labeled_regions = self.dashboard_state.vision.labeled_regions.clone();
+                profile.ocr_regions = self.dashboard_state.vision.ocr_zones.clone();
                 let profile_path = profiles_dir.join(format!("{}.json", profile.id));
                 if let Err(e) = crate::storage::profiles::save_profile(profile, &profile_path) {
-                    tracing::error!("Failed to save profile labels on exit: {}", e);
+                    tracing::error!("Failed to save profile zones on exit: {}", e);
                 } else {
                     tracing::info!(
-                        "Saved {} labels to profile on exit",
-                        profile.labeled_regions.len()
+                        "Saved {} zones to profile on exit",
+                        profile.ocr_regions.len()
                     );
                 }
             }
@@ -837,6 +1035,68 @@ impl DashboardApp {
         }
     }
 
+    /// Process profile commands from the UI (activate/deactivate/create/delete)
+    fn process_profile_commands(&mut self) {
+        use crate::dashboard::state::ProfileAction;
+
+        let action = self.dashboard_state.profiles.pending_action.take();
+
+        if let Some(action) = action {
+            match action {
+                ProfileAction::Activate(profile_id) => {
+                    self.activate_profile(&profile_id);
+                }
+                ProfileAction::Deactivate => {
+                    self.deactivate_profile();
+                }
+                ProfileAction::Create(profile) => {
+                    // Save profile to disk
+                    if let Some(ref profiles_dir) = self.profiles_dir {
+                        let profile_path = profiles_dir.join(format!("{}.json", profile.id));
+                        if let Err(e) =
+                            crate::storage::profiles::save_profile(&profile, &profile_path)
+                        {
+                            tracing::error!("Failed to save new profile '{}': {}", profile.name, e);
+                        } else {
+                            tracing::info!("Created and saved profile '{}' to disk", profile.name);
+                        }
+                    }
+                    // Add to shared state
+                    let mut state = self.shared_state.write();
+                    state.add_profile(profile);
+                }
+                ProfileAction::Delete(profile_id) => {
+                    // Remove from shared state first
+                    {
+                        let mut state = self.shared_state.write();
+                        state.remove_profile(&profile_id);
+                    }
+                    // Delete from disk
+                    if let Some(ref profiles_dir) = self.profiles_dir {
+                        if let Err(e) =
+                            crate::storage::profiles::delete_profile(profiles_dir, &profile_id)
+                        {
+                            tracing::error!(
+                                "Failed to delete profile '{}' from disk: {}",
+                                profile_id,
+                                e
+                            );
+                        } else {
+                            tracing::info!("Deleted profile '{}' from disk", profile_id);
+                        }
+                    }
+                    // If this was the active profile, deactivate it
+                    if self.active_profile.as_ref().map(|p| &p.id) == Some(&profile_id) {
+                        self.active_profile = None;
+                        self.dashboard_state.vision.ocr_zones.clear();
+                        self.dashboard_state.vision.zone_ocr_results.clear();
+                        self.reload_screens_from_profile();
+                    }
+                }
+            }
+        }
+    }
+
     /// Sync overlay config from shared state to the running overlay (only when changed)
     fn sync_overlay_config(&mut self) {
         if let Some(manager) = &self.overlay_manager {
@@ -857,38 +1117,117 @@ impl DashboardApp {
 
     /// Process test tip request
     fn process_test_tip(&mut self) {
-        let should_send = {
+        let (should_send, custom_message) = {
             let mut state = self.shared_state.write();
             let send = state.runtime.send_test_tip;
+            let custom_message = state.runtime.test_tip_message.take();
             state.runtime.send_test_tip = false;
-            send
+            (send, custom_message)
         };
 
         if should_send {
+            // Auto-start overlay if not running so the test tip can be seen
+            if self.overlay_manager.is_none() {
+                tracing::info!("Auto-starting overlay for test tip");
+                if let Err(e) = self.start_overlay() {
+                    tracing::error!("Failed to start overlay for test tip: {}", e);
+                    let mut state = self.shared_state.write();
+                    state
+                        .runtime
+                        .set_error(format!("Failed to start overlay: {}", e));
+                    return;
+                }
+                // Small sleep to ensure the overlay thread has initialized before sending tips
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+
             if let Some(manager) = &self.overlay_manager {
-                let tip = Tip {
-                    id: format!("test_{}", std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis()),
-                    message: "This is a test tip from GamersToolKit!".to_string(),
-                    priority: 50,
-                    duration_ms: Some(5000),
-                    play_sound: false,
+                // Get candidate screens from active profile
+                let candidate_screens: Vec<String> = {
+                    let state = self.shared_state.read();
+                    if let Some(profile) = state.active_profile() {
+                        profile.screens.iter().map(|s| s.name.clone()).collect()
+                    } else {
+                        Vec::new()
+                    }
                 };
-                manager.show_tip(tip);
+
+                // Use the custom message from the dashboard if provided, otherwise default to a generic success tip
+                let (base_msg, priority) = if let Some((msg, prio)) = custom_message {
+                    (msg, prio)
+                } else {
+                    ("This is a test tip from GamersToolKit!".to_string(), 50)
+                };
+
+                if candidate_screens.is_empty() {
+                    let tip = Tip {
+                        id: format!(
+                            "test_{}",
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis()
+                        ),
+                        message: base_msg,
+                        priority,
+                        duration_ms: Some(5000),
+                        play_sound: false,
+                    };
+                    manager.show_tip(tip);
+                } else {
+                    for (i, screen_name) in candidate_screens.iter().enumerate() {
+                        let tip = Tip {
+                            id: format!(
+                                "test_{}_{}",
+                                i,
+                                std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis()
+                            ),
+                            message: format!("[{}]: {}", screen_name, base_msg),
+                            priority,
+                            duration_ms: Some(5000),
+                            play_sound: false,
+                        };
+                        manager.show_tip(tip);
+                    }
+                }
 
                 // Update tips displayed count
                 let mut state = self.shared_state.write();
-                state.runtime.tips_displayed += 1;
+                state.runtime.tips_displayed += std::cmp::max(1, candidate_screens.len());
             }
         }
     }
 
     /// Poll for global hotkey events
     fn poll_hotkeys(&mut self) {
-        if let Some(ref hotkey_manager) = self.hotkey_manager {
-            hotkey_manager.poll_events();
+        use crate::hotkey::HotkeyEvent;
+
+        let event = if let Some(ref hotkey_manager) = self.hotkey_manager {
+            hotkey_manager.poll_events()
+        } else {
+            HotkeyEvent::None
+        };
+
+        match event {
+            HotkeyEvent::None => {}
+            HotkeyEvent::ToggleOverlay => {
+                // Auto-start overlay if it's not running
+                if self.overlay_manager.is_none() {
+                    tracing::info!("Auto-starting overlay on toggle hotkey");
+                    if let Err(e) = self.start_overlay() {
+                        tracing::error!("Failed to auto-start overlay: {}", e);
+                        let mut state = self.shared_state.write();
+                        state.runtime.set_error(e);
+                    }
+                }
+            }
+            HotkeyEvent::EnterZoneSelection => {
+                // Request zone selection mode
+                self.dashboard_state.vision.pending_zone_selection_mode = true;
+            }
         }
     }
 
@@ -901,14 +1240,17 @@ impl DashboardApp {
         // Update model status from model manager (for PaddleOCR)
         if let Some(ref manager) = self.model_manager {
             vision_state.detection_model_ready = manager.is_model_available(ModelType::Detection);
-            vision_state.recognition_model_ready = manager.is_model_available(ModelType::Recognition);
+            vision_state.recognition_model_ready =
+                manager.is_model_available(ModelType::Recognition);
             vision_state.models_ready = manager.are_models_ready();
         }
 
         // Update OCR initialized status based on backend
         if let Some(ref pipeline) = self.vision_pipeline {
-            vision_state.ocr_initialized = pipeline.is_ocr_ready() && pipeline.backend() == OcrBackend::PaddleOcr;
-            vision_state.windows_ocr_initialized = pipeline.is_ocr_ready() && pipeline.backend() == OcrBackend::WindowsOcr;
+            vision_state.ocr_initialized =
+                pipeline.is_ocr_ready() && pipeline.backend() == OcrBackend::PaddleOcr;
+            vision_state.windows_ocr_initialized =
+                pipeline.is_ocr_ready() && pipeline.backend() == OcrBackend::WindowsOcr;
         } else {
             vision_state.ocr_initialized = false;
             vision_state.windows_ocr_initialized = false;
@@ -957,7 +1299,7 @@ impl DashboardApp {
                         tracing::error!("Failed to create vision pipeline: {}", e);
                         return;
                     }
-                }
+                },
             };
 
             // Set the backend
@@ -982,119 +1324,1092 @@ impl DashboardApp {
 
             self.vision_pipeline = Some(pipeline);
         }
+    }
 
-        // Check for preprocessed frame results from background thread
-        if let Some(ref rx) = self.preprocess_rx {
-            if let Ok(preprocessed) = rx.try_recv() {
-                // Preprocessing done, now run OCR on main thread (Windows OCR is fast)
-                if let Some(ref mut pipeline) = self.vision_pipeline {
-                    pipeline.set_backend(vision_state.selected_backend);
+    /// Process zone selection and OCR commands
+    fn process_zone_commands(&mut self) {
+        // Handle request to enter zone selection mode
+        if self.dashboard_state.vision.pending_zone_selection_mode {
+            self.dashboard_state.vision.pending_zone_selection_mode = false;
 
-                    let frame = crate::capture::frame::CapturedFrame::new(
-                        preprocessed.data,
-                        preprocessed.width,
-                        preprocessed.height,
-                    );
+            // Auto-start overlay if not running
+            if self.overlay_manager.is_none() {
+                tracing::info!("Auto-starting overlay for zone selection");
+                if let Err(e) = self.start_overlay() {
+                    tracing::error!("Failed to start overlay for zone selection: {}", e);
+                    self.dashboard_state.vision.zone_selection_error =
+                        Some(format!("Failed to start overlay: {}", e));
+                    return;
+                }
+                // Give the overlay a moment to initialize
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
 
-                    let granularity = match vision_state.ocr_granularity {
-                        crate::dashboard::state::OcrGranularity::Word => OcrGranularity::Word,
-                        crate::dashboard::state::OcrGranularity::Line => OcrGranularity::Line,
-                    };
-
-                    match pipeline.process_with_granularity(&frame, granularity) {
-                        Ok(result) => {
-                            vision_state.last_ocr_results = result.text_regions
-                                .into_iter()
-                                .map(|r| {
-                                    let bounds = if preprocessed.scale_factor > 1 {
-                                        (
-                                            r.bounds.0 / preprocessed.scale_factor,
-                                            r.bounds.1 / preprocessed.scale_factor,
-                                            r.bounds.2 / preprocessed.scale_factor,
-                                            r.bounds.3 / preprocessed.scale_factor,
-                                        )
-                                    } else {
-                                        r.bounds
-                                    };
-                                    OcrResultDisplay {
-                                        text: r.text,
-                                        bounds,
-                                        confidence: r.confidence,
-                                    }
-                                })
-                                .collect();
-                            vision_state.last_processing_time_ms = preprocessed.start_time.elapsed().as_millis() as u64;
-                            vision_state.last_error = None;
-                            vision_state.update_labels_from_ocr();
-                        }
-                        Err(e) => {
-                            vision_state.last_error = Some(format!("OCR failed: {}", e));
-                            tracing::error!("OCR processing failed: {}", e);
-                        }
+            if let Some(ref manager) = self.overlay_manager {
+                // Bring captured window to front so user can see it
+                {
+                    let shared = self.shared_state.read();
+                    if let Some(ref window_title) = shared.config.capture.target_window {
+                        crate::capture::bring_window_to_front(window_title);
                     }
                 }
-                vision_state.is_processing = false;
-                self.preprocess_rx = None;
+
+                // Send existing zones to overlay for display
+                let existing_zones: Vec<(String, (f32, f32, f32, f32))> = self
+                    .dashboard_state
+                    .vision
+                    .ocr_zones
+                    .iter()
+                    .map(|z| (z.name.clone(), z.bounds))
+                    .collect();
+
+                // Get capture frame dimensions for proper coordinate normalization
+                let capture_size = {
+                    let w = self.dashboard_state.vision.last_frame_width;
+                    let h = self.dashboard_state.vision.last_frame_height;
+                    if w > 0 && h > 0 {
+                        Some((w, h))
+                    } else {
+                        None
+                    }
+                };
+
+                manager.enter_zone_selection_mode(existing_zones, capture_size);
+                self.dashboard_state.vision.zone_selection.is_selecting = true;
+                self.dashboard_state.vision.zone_selection_error = None;
+                tracing::info!(
+                    "Requested zone selection mode with capture_size: {:?}",
+                    capture_size
+                );
+            } else {
+                tracing::warn!("Cannot enter zone selection mode: overlay not running");
+                self.dashboard_state.vision.zone_selection_error =
+                    Some("Overlay failed to start".to_string());
             }
         }
 
-        // Handle OCR run request (manual or auto)
-        let backend_ready = match vision_state.selected_backend {
+        // Handle request to enter visual anchor capture mode
+        if let Some(screen_id) = self.dashboard_state.screens.pending_anchor_capture.clone() {
+            self.dashboard_state.screens.pending_anchor_capture = None;
+
+            // Auto-start capture if not running (needed to get frame data for anchor)
+            if !self.is_capturing() {
+                tracing::info!("Auto-starting capture for visual anchor capture");
+                if let Err(e) = self.start_capture() {
+                    tracing::error!("Failed to start capture for visual anchor capture: {}", e);
+                    self.dashboard_state.screens.error_message =
+                        Some(format!("Failed to start capture: {}", e));
+                    return;
+                }
+                // Give capture time to start and get first frame
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+
+            // Auto-start overlay if not running
+            if self.overlay_manager.is_none() {
+                tracing::info!("Auto-starting overlay for visual anchor capture");
+                if let Err(e) = self.start_overlay() {
+                    tracing::error!("Failed to start overlay for visual anchor capture: {}", e);
+                    self.dashboard_state.screens.error_message =
+                        Some(format!("Failed to start overlay: {}", e));
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+
+            if let Some(ref manager) = self.overlay_manager {
+                // Bring captured window to front so user can see it
+                {
+                    let shared = self.shared_state.read();
+                    if let Some(ref window_title) = shared.config.capture.target_window {
+                        crate::capture::bring_window_to_front(window_title);
+                    }
+                }
+
+                // Get existing anchors for display
+                let existing_anchors: Vec<(String, (f32, f32, f32, f32))> = {
+                    let shared = self.shared_state.read();
+                    shared
+                        .active_profile()
+                        .and_then(|p| p.screens.iter().find(|s| s.id == screen_id))
+                        .map(|s| s.anchors.iter().map(|a| (a.id.clone(), a.bounds)).collect())
+                        .unwrap_or_default()
+                };
+
+                let capture_size = {
+                    let w = self.dashboard_state.vision.last_frame_width;
+                    let h = self.dashboard_state.vision.last_frame_height;
+                    if w > 0 && h > 0 {
+                        Some((w, h))
+                    } else {
+                        None
+                    }
+                };
+
+                manager.enter_visual_anchor_mode(screen_id, existing_anchors, capture_size);
+                tracing::info!("Requested visual anchor capture mode");
+            } else {
+                self.dashboard_state.screens.error_message =
+                    Some("Overlay failed to start".to_string());
+            }
+        }
+
+        // Handle request to enter text anchor capture mode
+        if let Some(screen_id) = self
+            .dashboard_state
+            .screens
+            .pending_text_anchor_capture
+            .clone()
+        {
+            self.dashboard_state.screens.pending_text_anchor_capture = None;
+
+            // Auto-start capture if not running (needed to get frame data for anchor)
+            if !self.is_capturing() {
+                tracing::info!("Auto-starting capture for text anchor capture");
+                if let Err(e) = self.start_capture() {
+                    tracing::error!("Failed to start capture for text anchor capture: {}", e);
+                    self.dashboard_state.screens.error_message =
+                        Some(format!("Failed to start capture: {}", e));
+                    return;
+                }
+                // Give capture time to start and get first frame
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+
+            // Auto-start overlay if not running
+            if self.overlay_manager.is_none() {
+                tracing::info!("Auto-starting overlay for text anchor capture");
+                if let Err(e) = self.start_overlay() {
+                    tracing::error!("Failed to start overlay for text anchor capture: {}", e);
+                    self.dashboard_state.screens.error_message =
+                        Some(format!("Failed to start overlay: {}", e));
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+
+            if let Some(ref manager) = self.overlay_manager {
+                // Bring captured window to front so user can see it
+                {
+                    let shared = self.shared_state.read();
+                    if let Some(ref window_title) = shared.config.capture.target_window {
+                        crate::capture::bring_window_to_front(window_title);
+                    }
+                }
+
+                // Get existing anchors for display
+                let existing_anchors: Vec<(String, (f32, f32, f32, f32))> = {
+                    let shared = self.shared_state.read();
+                    shared
+                        .active_profile()
+                        .and_then(|p| p.screens.iter().find(|s| s.id == screen_id))
+                        .map(|s| s.anchors.iter().map(|a| (a.id.clone(), a.bounds)).collect())
+                        .unwrap_or_default()
+                };
+
+                let capture_size = {
+                    let w = self.dashboard_state.vision.last_frame_width;
+                    let h = self.dashboard_state.vision.last_frame_height;
+                    if w > 0 && h > 0 {
+                        Some((w, h))
+                    } else {
+                        None
+                    }
+                };
+
+                manager.enter_text_anchor_mode(screen_id, existing_anchors, capture_size);
+                tracing::info!("Requested text anchor capture mode");
+            } else {
+                self.dashboard_state.screens.error_message =
+                    Some("Overlay failed to start".to_string());
+            }
+        }
+
+        let vision_state = &mut self.dashboard_state.vision;
+
+        // Poll for zone selection results from overlay
+        if let Some(ref manager) = self.overlay_manager {
+            if let Some(result) = manager.poll_zone_selection_result() {
+                match result {
+                    ZoneSelectionResult::Completed { bounds } => {
+                        // Check if we're repositioning an existing zone
+                        if let Some(idx) = vision_state.zone_selection.repositioning_zone_index {
+                            // Update existing zone's bounds
+                            if let Some(zone) = vision_state.ocr_zones.get_mut(idx) {
+                                zone.bounds = bounds;
+                                vision_state.zones_dirty = true;
+                                tracing::info!(
+                                    "Zone '{}' repositioned: ({:.2}, {:.2}, {:.2}, {:.2})",
+                                    zone.name,
+                                    bounds.0,
+                                    bounds.1,
+                                    bounds.2,
+                                    bounds.3
+                                );
+                            }
+                            vision_state.zone_selection.repositioning_zone_index = None;
+                        } else {
+                            // Creating a new zone - show naming dialog
+                            vision_state.zone_selection.current_selection = Some(bounds);
+                            vision_state.zone_selection.show_naming_dialog = true;
+                            tracing::info!(
+                                "Zone selection completed: ({:.2}, {:.2}, {:.2}, {:.2})",
+                                bounds.0,
+                                bounds.1,
+                                bounds.2,
+                                bounds.3
+                            );
+                        }
+                        vision_state.zone_selection.is_selecting = false;
+                    }
+                    ZoneSelectionResult::Cancelled => {
+                        vision_state.zone_selection.is_selecting = false;
+                        vision_state.zone_selection.current_selection = None;
+                        vision_state.zone_selection.repositioning_zone_index = None;
+                        self.dashboard_state.screens.pending_anchor_capture = None;
+                        self.dashboard_state.screens.pending_text_anchor_capture = None;
+                        self.dashboard_state.screens.pending_full_capture = false;
+                        tracing::info!("Selection cancelled");
+                    }
+                    ZoneSelectionResult::VisualAnchorCaptured { screen_id, bounds } => {
+                        // Handle visual anchor capture for screen recognition
+                        tracing::info!(
+                            "Visual anchor captured for screen {}: ({:.2}, {:.2}, {:.2}, {:.2})",
+                            screen_id,
+                            bounds.0,
+                            bounds.1,
+                            bounds.2,
+                            bounds.3
+                        );
+
+                        // Get a fresh frame from capture manager (don't rely on Vision view state)
+                        // Try multiple times with small delays since try_next_frame only returns
+                        // if there's already a frame in the channel buffer
+                        let mut frame = None;
+                        for attempt in 0..10 {
+                            {
+                                let capture_guard = self.capture_manager.lock();
+                                if let Some(ref capture) = *capture_guard {
+                                    frame = capture.try_next_frame();
+                                }
+                            }
+                            if frame.is_some() {
+                                break;
+                            }
+                            if attempt < 9 {
+                                std::thread::sleep(std::time::Duration::from_millis(50));
+                            }
+                        }
+
+                        // Extract template from frame data
+                        if let Some(frame) = frame {
+                            let width = frame.width;
+                            let height = frame.height;
+                            if width > 0 && height > 0 {
+                                // Convert normalized bounds to pixel coordinates
+                                let px = (bounds.0 * width as f32) as u32;
+                                let py = (bounds.1 * height as f32) as u32;
+                                let pw = (bounds.2 * width as f32) as u32;
+                                let ph = (bounds.3 * height as f32) as u32;
+
+                                // Extract region and encode as PNG
+                                if let Some(png_data) = extract_region_as_png(
+                                    &frame.data,
+                                    width,
+                                    height,
+                                    px,
+                                    py,
+                                    pw,
+                                    ph,
+                                ) {
+                                    let new_anchor = crate::storage::profiles::ScreenAnchor {
+                                        id: format!(
+                                            "anchor_{}",
+                                            std::time::SystemTime::now()
+                                                .duration_since(std::time::UNIX_EPOCH)
+                                                .unwrap()
+                                                .as_millis()
+                                        ),
+                                        anchor_type: crate::storage::profiles::AnchorType::Visual,
+                                        bounds,
+                                        template_data: Some(png_data),
+                                        expected_text: None,
+                                        text_similarity: 0.8,
+                                        required: true,
+                                    };
+
+                                    // Add to screen
+                                    let mut shared = self.shared_state.write();
+                                    let active_id = shared.active_profile_id.clone();
+                                    if let Some(profile) = shared
+                                        .profiles
+                                        .iter_mut()
+                                        .find(|p| active_id.as_ref() == Some(&p.id))
+                                    {
+                                        if let Some(screen) =
+                                            profile.screens.iter_mut().find(|s| s.id == screen_id)
+                                        {
+                                            screen.anchors.push(new_anchor);
+                                            tracing::info!(
+                                                "Added visual anchor to screen {}",
+                                                screen_id
+                                            );
+                                        }
+                                    }
+                                } else {
+                                    tracing::warn!("Failed to extract region as PNG");
+                                    self.dashboard_state.screens.error_message =
+                                        Some("Failed to extract anchor region".to_string());
+                                }
+                            }
+                        } else {
+                            tracing::warn!("No frame available for visual anchor capture");
+                            self.dashboard_state.screens.error_message = Some(
+                                "No capture frame available. Make sure capture is running."
+                                    .to_string(),
+                            );
+                        }
+
+                        self.dashboard_state.screens.pending_anchor_capture = None;
+                        self.dashboard_state.screens.screens_dirty = true;
+                    }
+                    ZoneSelectionResult::TextAnchorCaptured { screen_id, bounds } => {
+                        // Handle text anchor capture for screen recognition
+                        tracing::info!(
+                            "Text anchor captured for screen {}: ({:.2}, {:.2}, {:.2}, {:.2})",
+                            screen_id,
+                            bounds.0,
+                            bounds.1,
+                            bounds.2,
+                            bounds.3
+                        );
+
+                        // Ensure OCR pipeline is initialized
+                        let selected_backend = self.dashboard_state.vision.selected_backend;
+                        if self.vision_pipeline.is_none() {
+                            match VisionPipeline::new() {
+                                Ok(p) => {
+                                    self.vision_pipeline = Some(p);
+                                    tracing::info!("Created vision pipeline for text anchor OCR");
+                                }
+                                Err(e) => {
+                                    tracing::error!("Failed to create vision pipeline: {}", e);
+                                }
+                            }
+                        }
+
+                        // Initialize OCR if needed
+                        if let Some(ref mut pipeline) = self.vision_pipeline {
+                            pipeline.set_backend(selected_backend);
+                            if !pipeline.is_ocr_ready() {
+                                if let Err(e) = pipeline.init_ocr() {
+                                    tracing::error!(
+                                        "Failed to initialize OCR for text anchor: {}",
+                                        e
+                                    );
+                                } else {
+                                    tracing::info!(
+                                        "Initialized {:?} OCR for text anchor",
+                                        selected_backend
+                                    );
+                                }
+                            }
+                        }
+
+                        // Run OCR on the region and show confirmation dialog
+                        // We need to get a frame to run OCR on
+                        let detected_text = {
+                            let frame = {
+                                let capture_guard = self.capture_manager.lock();
+                                if let Some(ref capture) = *capture_guard {
+                                    capture.try_next_frame()
+                                } else {
+                                    None
+                                }
+                            };
+
+                            if let Some(frame) = frame {
+                                let width = frame.width;
+                                let height = frame.height;
+
+                                if width > 0 && height > 0 {
+                                    // Convert normalized bounds to pixel coordinates
+                                    let px = (bounds.0 * width as f32) as u32;
+                                    let py = (bounds.1 * height as f32) as u32;
+                                    let pw = (bounds.2 * width as f32) as u32;
+                                    let ph = (bounds.3 * height as f32) as u32;
+
+                                    tracing::info!(
+                                        "Running OCR on region: {}x{} at ({}, {})",
+                                        pw,
+                                        ph,
+                                        px,
+                                        py
+                                    );
+
+                                    // Try to run OCR on the region
+                                    if let Some(ref mut pipeline) = self.vision_pipeline {
+                                        match pipeline.process_region_with_preprocessing(
+                                            &frame, px, py, pw, ph, None,
+                                        ) {
+                                            Ok(result) => {
+                                                tracing::info!(
+                                                    "OCR returned {} text regions",
+                                                    result.text_regions.len()
+                                                );
+                                                // Combine all detected text
+                                                let text: String = result
+                                                    .text_regions
+                                                    .iter()
+                                                    .map(|r| r.text.as_str())
+                                                    .collect::<Vec<_>>()
+                                                    .join(" ");
+                                                if !text.is_empty() {
+                                                    tracing::info!("Detected text: '{}'", text);
+                                                    Some(text)
+                                                } else {
+                                                    tracing::warn!("OCR returned empty text");
+                                                    None
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!("OCR failed for text anchor: {}", e);
+                                                None
+                                            }
+                                        }
+                                    } else {
+                                        tracing::warn!(
+                                            "Vision pipeline not available for text anchor OCR"
+                                        );
+                                        None
+                                    }
+                                } else {
+                                    tracing::warn!("Invalid frame dimensions for text anchor OCR");
+                                    None
+                                }
+                            } else {
+                                tracing::warn!("No frame available for text anchor OCR");
+                                None
+                            }
+                        };
+
+                        // Store for dialog (show even if OCR failed - user can enter text manually)
+                        let text =
+                            detected_text.unwrap_or_else(|| "(no text detected)".to_string());
+                        self.dashboard_state.screens.pending_text_for_anchor =
+                            Some((screen_id.clone(), text, bounds));
+                        self.dashboard_state
+                            .screens
+                            .editing_text_anchor_text
+                            .clear();
+
+                        self.dashboard_state.screens.pending_text_anchor_capture = None;
+                    }
+                    ZoneSelectionResult::FullScreenCaptured { screen_id } => {
+                        // Handle full screen template capture
+                        tracing::info!("Full screen template captured for screen {}", screen_id);
+                        // TODO: Store current frame as template for screen definition
+                        self.dashboard_state.screens.pending_full_capture = false;
+                        self.dashboard_state.screens.screens_dirty = true;
+                    }
+                }
+            }
+        }
+
+        // Run zone OCR for enabled zones when we have frame data
+        // This runs on every frame when auto_run_ocr is enabled
+        self.process_zone_ocr();
+    }
+
+    /// Process OCR for all enabled zones
+    fn process_zone_ocr(&mut self) {
+        use crate::vision::OcrBackend;
+
+        let vision_state = &mut self.dashboard_state.vision;
+
+        // Only process if zones are defined
+        if vision_state.ocr_zones.is_empty() {
+            return;
+        }
+
+        // Check if any zones are enabled
+        let has_enabled_zones = vision_state.ocr_zones.iter().any(|z| z.enabled);
+        if !has_enabled_zones {
+            return;
+        }
+
+        // Don't process while another OCR is running
+        if vision_state.is_processing {
+            return;
+        }
+
+        let selected_backend = vision_state.selected_backend;
+        let backend_ready = match selected_backend {
             OcrBackend::WindowsOcr => vision_state.windows_ocr_initialized,
             OcrBackend::PaddleOcr => vision_state.ocr_initialized,
         };
-        let should_run_ocr = vision_state.pending_ocr_run
-            || (vision_state.auto_run_ocr && vision_state.last_frame_data.is_some());
 
-        // Only start new OCR if not already processing
-        if should_run_ocr && backend_ready && self.vision_pipeline.is_some() && !vision_state.is_processing {
-            vision_state.pending_ocr_run = false;
+        // Auto-initialize OCR if not ready but zones are enabled
+        if !backend_ready {
+            // Create pipeline if needed
+            if self.vision_pipeline.is_none() {
+                match VisionPipeline::new() {
+                    Ok(p) => {
+                        self.vision_pipeline = Some(p);
+                        tracing::info!("Created vision pipeline for zone OCR");
+                    }
+                    Err(e) => {
+                        tracing::debug!("Failed to create vision pipeline: {}", e);
+                        return;
+                    }
+                }
+            }
 
-            if let Some(frame_data) = vision_state.last_frame_data.take() {
-                let width = vision_state.last_frame_width;
-                let height = vision_state.last_frame_height;
+            // Initialize OCR backend
+            if let Some(ref mut pipeline) = self.vision_pipeline {
+                pipeline.set_backend(selected_backend);
+                if let Err(e) = pipeline.init_ocr() {
+                    tracing::debug!("Failed to initialize OCR for zone processing: {}", e);
+                    return;
+                }
 
-                if width > 0 && height > 0 {
-                    vision_state.is_processing = true;
-
-                    // Clone preprocessing settings for the thread
-                    let preprocessing = vision_state.preprocessing.clone();
-                    let scale_factor = if preprocessing.enabled && preprocessing.scale > 1 {
-                        preprocessing.scale
-                    } else {
-                        1
-                    };
-
-                    // Create channel for result
-                    let (tx, rx) = mpsc::channel();
-                    self.preprocess_rx = Some(rx);
-
-                    // Spawn background thread for preprocessing (the slow part)
-                    std::thread::spawn(move || {
-                        let start_time = Instant::now();
-
-                        let preprocess_result = crate::vision::ocr_preprocess::apply_preprocessing_with_scale(
-                            &frame_data,
-                            width,
-                            height,
-                            &preprocessing,
-                        );
-
-                        let _ = tx.send(PreprocessedFrame {
-                            data: preprocess_result.data,
-                            width: preprocess_result.width,
-                            height: preprocess_result.height,
-                            scale_factor,
-                            start_time,
-                        });
-                    });
+                match selected_backend {
+                    OcrBackend::WindowsOcr => {
+                        vision_state.windows_ocr_initialized = true;
+                        tracing::info!("Auto-initialized Windows OCR for zone processing");
+                    }
+                    OcrBackend::PaddleOcr => {
+                        vision_state.ocr_initialized = true;
+                        tracing::info!("Auto-initialized PaddleOCR for zone processing");
+                    }
                 }
             }
         }
 
-        // Clear frame data after auto-run to prevent repeated processing
-        if vision_state.auto_run_ocr && !vision_state.is_processing {
-            vision_state.last_frame_data = None;
+        // Get a fresh frame from capture manager (zone OCR runs independently of Vision view)
+        let frame = {
+            let capture_guard = self.capture_manager.lock();
+            if let Some(ref capture) = *capture_guard {
+                capture.try_next_frame()
+            } else {
+                None
+            }
+        };
+
+        let Some(frame) = frame else {
+            return;
+        };
+
+        let Some(ref mut pipeline) = self.vision_pipeline else {
+            return;
+        };
+
+        // Ensure backend is synced with user selection
+        pipeline.set_backend(selected_backend);
+
+        let frame_width = frame.width;
+        let frame_height = frame.height;
+
+        if frame_width == 0 || frame_height == 0 {
+            return;
+        }
+
+        // Process each enabled zone
+        for zone in &vision_state.ocr_zones {
+            if !zone.enabled {
+                continue;
+            }
+
+            // Convert normalized bounds to pixel coordinates
+            let x = (zone.bounds.0 * frame_width as f32) as u32;
+            let y = (zone.bounds.1 * frame_height as f32) as u32;
+            let w = (zone.bounds.2 * frame_width as f32) as u32;
+            let h = (zone.bounds.3 * frame_height as f32) as u32;
+
+            // Ensure minimum size
+            if w < 5 || h < 5 {
+                continue;
+            }
+
+            // Get preprocessing settings: use zone's custom settings if available, otherwise global
+            let preprocessing = zone
+                .preprocessing
+                .as_ref()
+                .or(Some(&vision_state.preprocessing))
+                .filter(|pp| pp.enabled);
+
+            tracing::info!(
+                "Zone '{}': processing region ({}, {}) {}x{} (frame: {}x{})",
+                zone.name,
+                x,
+                y,
+                w,
+                h,
+                frame_width,
+                frame_height
+            );
+
+            // Run OCR on the zone region with preprocessing
+            match pipeline.process_region_with_preprocessing(&frame, x, y, w, h, preprocessing) {
+                Ok(result) => {
+                    tracing::info!(
+                        "Zone '{}': OCR returned {} text regions",
+                        zone.name,
+                        result.text_regions.len()
+                    );
+                    for (i, r) in result.text_regions.iter().enumerate() {
+                        tracing::info!("  Region {}: '{}' (conf: {:.2})", i, r.text, r.confidence);
+                    }
+
+                    // Combine all detected text
+                    let raw_text: String = result
+                        .text_regions
+                        .iter()
+                        .map(|r| r.text.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+
+                    // Filter text based on content type
+                    let text = filter_text_by_content_type(&raw_text, &zone.content_type);
+
+                    // Update zone result
+                    vision_state.zone_ocr_results.insert(
+                        zone.id.clone(),
+                        ZoneOcrResult {
+                            zone_id: zone.id.clone(),
+                            zone_name: zone.name.clone(),
+                            text,
+                            last_updated: Instant::now(),
+                        },
+                    );
+                }
+                Err(e) => {
+                    tracing::info!("Zone OCR failed for '{}': {}", zone.name, e);
+                }
+            }
+        }
+    }
+
+    /// Process auto-configure for a zone
+    /// This iterates through different OCR settings until text is detected
+    fn process_auto_configure(&mut self) {
+        use crate::config::OcrPreprocessing;
+        use crate::vision::OcrBackend;
+
+        // Check if auto-configure is active
+        let auto_config = match self
+            .dashboard_state
+            .vision
+            .zone_selection
+            .auto_configure
+            .as_mut()
+        {
+            Some(ac) if ac.current_step != AutoConfigureStep::Completed => ac,
+            _ => return,
+        };
+
+        let zone_idx = auto_config.zone_index;
+
+        // Validate zone exists
+        let zone = match self.dashboard_state.vision.ocr_zones.get(zone_idx) {
+            Some(z) => z.clone(),
+            None => {
+                if let Some(ref mut ac) = self.dashboard_state.vision.zone_selection.auto_configure
+                {
+                    ac.current_step = AutoConfigureStep::Completed;
+                    ac.error_message = Some("Zone not found".to_string());
+                }
+                return;
+            }
+        };
+
+        // Ensure OCR is initialized
+        let vision_state = &self.dashboard_state.vision;
+        let selected_backend = vision_state.selected_backend;
+        let backend_ready = match selected_backend {
+            OcrBackend::WindowsOcr => vision_state.windows_ocr_initialized,
+            OcrBackend::PaddleOcr => vision_state.ocr_initialized,
+        };
+
+        if !backend_ready {
+            // Try to initialize
+            if self.vision_pipeline.is_none() {
+                match VisionPipeline::new() {
+                    Ok(p) => self.vision_pipeline = Some(p),
+                    Err(e) => {
+                        if let Some(ref mut ac) =
+                            self.dashboard_state.vision.zone_selection.auto_configure
+                        {
+                            ac.current_step = AutoConfigureStep::Completed;
+                            ac.error_message = Some(format!("Failed to create pipeline: {}", e));
+                        }
+                        return;
+                    }
+                }
+            }
+
+            if let Some(ref mut pipeline) = self.vision_pipeline {
+                pipeline.set_backend(selected_backend);
+                if let Err(e) = pipeline.init_ocr() {
+                    if let Some(ref mut ac) =
+                        self.dashboard_state.vision.zone_selection.auto_configure
+                    {
+                        ac.current_step = AutoConfigureStep::Completed;
+                        ac.error_message = Some(format!("Failed to init OCR: {}", e));
+                    }
+                    return;
+                }
+
+                match selected_backend {
+                    OcrBackend::WindowsOcr => {
+                        self.dashboard_state.vision.windows_ocr_initialized = true;
+                    }
+                    OcrBackend::PaddleOcr => {
+                        self.dashboard_state.vision.ocr_initialized = true;
+                    }
+                }
+            }
+        }
+
+        // Use stored frame data from vision state (more reliable than try_next_frame)
+        let frame = {
+            let vision = &self.dashboard_state.vision;
+            if let Some(ref data) = vision.last_frame_data {
+                if vision.last_frame_width > 0 && vision.last_frame_height > 0 {
+                    Some(crate::capture::CapturedFrame::new(
+                        data.clone(),
+                        vision.last_frame_width,
+                        vision.last_frame_height,
+                    ))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+
+        let Some(frame) = frame else {
+            if let Some(ref mut ac) = self.dashboard_state.vision.zone_selection.auto_configure {
+                ac.status_message = "Waiting for capture frame... (open Vision tab)".to_string();
+            }
+            return;
+        };
+
+        let Some(ref mut pipeline) = self.vision_pipeline else {
+            return;
+        };
+
+        pipeline.set_backend(selected_backend);
+
+        let frame_width = frame.width;
+        let frame_height = frame.height;
+
+        if frame_width == 0 || frame_height == 0 {
+            return;
+        }
+
+        // Convert zone bounds to pixels
+        let x = (zone.bounds.0 * frame_width as f32) as u32;
+        let y = (zone.bounds.1 * frame_height as f32) as u32;
+        let w = (zone.bounds.2 * frame_width as f32) as u32;
+        let h = (zone.bounds.3 * frame_height as f32) as u32;
+
+        if w < 5 || h < 5 {
+            if let Some(ref mut ac) = self.dashboard_state.vision.zone_selection.auto_configure {
+                ac.current_step = AutoConfigureStep::Completed;
+                ac.error_message = Some("Zone too small".to_string());
+            }
+            return;
+        }
+
+        // Get current settings to test from auto_configure state
+        let ac = self
+            .dashboard_state
+            .vision
+            .zone_selection
+            .auto_configure
+            .as_ref()
+            .unwrap();
+        let test_preprocessing = if ac.current_preprocessing_enabled {
+            Some(OcrPreprocessing {
+                enabled: true,
+                grayscale: ac.current_grayscale,
+                contrast: ac.current_contrast,
+                sharpen: 0.0,
+                invert: ac.current_invert,
+                scale: ac.current_scale,
+            })
+        } else {
+            Some(OcrPreprocessing {
+                enabled: false,
+                grayscale: false,
+                contrast: 1.0,
+                sharpen: 0.0,
+                invert: false,
+                scale: ac.current_scale,
+            })
+        };
+
+        // Update status message
+        let status = format!(
+            "Testing: scale={}x, pp={}, gray={}, inv={}, contrast={:.1}",
+            ac.current_scale,
+            if ac.current_preprocessing_enabled {
+                "on"
+            } else {
+                "off"
+            },
+            if ac.current_grayscale { "Y" } else { "N" },
+            if ac.current_invert { "Y" } else { "N" },
+            ac.current_contrast
+        );
+
+        // Run OCR with current settings
+        let result = pipeline.process_region_with_preprocessing(
+            &frame,
+            x,
+            y,
+            w,
+            h,
+            test_preprocessing.as_ref(),
+        );
+
+        match result {
+            Ok(ocr_result) => {
+                // Check if we got text
+                let combined_text: String = ocr_result
+                    .text_regions
+                    .iter()
+                    .map(|r| r.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+
+                // Calculate average confidence
+                let avg_confidence = if ocr_result.text_regions.is_empty() {
+                    0.0
+                } else {
+                    ocr_result
+                        .text_regions
+                        .iter()
+                        .map(|r| r.confidence)
+                        .sum::<f32>()
+                        / ocr_result.text_regions.len() as f32
+                };
+
+                let filtered_text = filter_text_by_content_type(&combined_text, &zone.content_type);
+
+                if !filtered_text.trim().is_empty() {
+                    // Found text - check if this is better than our best so far
+                    let ac = self
+                        .dashboard_state
+                        .vision
+                        .zone_selection
+                        .auto_configure
+                        .as_mut()
+                        .unwrap();
+
+                    if avg_confidence > ac.best_confidence {
+                        tracing::info!(
+                            "Auto-configure found better config for '{}': text='{}', confidence={:.2}, settings: {:?}",
+                            zone.name,
+                            filtered_text,
+                            avg_confidence,
+                            test_preprocessing
+                        );
+                        ac.best_confidence = avg_confidence;
+                        ac.best_text = filtered_text;
+                        ac.best_preprocessing = test_preprocessing;
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::debug!("Auto-configure OCR failed: {}", e);
+            }
+        }
+
+        // Advance to next configuration
+        let ac = self
+            .dashboard_state
+            .vision
+            .zone_selection
+            .auto_configure
+            .as_mut()
+            .unwrap();
+        ac.status_message = status;
+        ac.current_step = AutoConfigureStep::Testing;
+        ac.current_combination += 1;
+
+        // Advance settings: scale -> preprocessing -> grayscale -> invert -> contrast
+        // Contrast values: 1.0, 1.5, 2.0
+        let contrast_values = [1.0, 1.5, 2.0];
+
+        // Find current contrast index
+        let current_contrast_idx = contrast_values
+            .iter()
+            .position(|&c| (c - ac.current_contrast).abs() < 0.01)
+            .unwrap_or(0);
+
+        // Try next contrast
+        if current_contrast_idx + 1 < contrast_values.len() {
+            ac.current_contrast = contrast_values[current_contrast_idx + 1];
+            return;
+        }
+
+        // Reset contrast, try next invert
+        ac.current_contrast = 1.0;
+        if !ac.current_invert {
+            ac.current_invert = true;
+            return;
+        }
+
+        // Reset invert, try next grayscale
+        ac.current_invert = false;
+        if !ac.current_grayscale {
+            ac.current_grayscale = true;
+            return;
+        }
+
+        // Reset grayscale, try next preprocessing state
+        ac.current_grayscale = false;
+        if !ac.current_preprocessing_enabled {
+            ac.current_preprocessing_enabled = true;
+            return;
+        }
+
+        // Reset preprocessing, try next scale
+        ac.current_preprocessing_enabled = false;
+        if ac.current_scale < 4 {
+            ac.current_scale += 1;
+            return;
+        }
+
+        // All combinations exhausted - apply best configuration if found
+        if ac.best_preprocessing.is_some() {
+            let best_pp = ac.best_preprocessing.clone();
+            let best_text = ac.best_text.clone();
+            let best_conf = ac.best_confidence;
+
+            // Apply the best settings to the zone
+            if let Some(zone) = self.dashboard_state.vision.ocr_zones.get_mut(zone_idx) {
+                zone.preprocessing = best_pp;
+                self.dashboard_state.vision.zones_dirty = true;
+            }
+
+            ac.current_step = AutoConfigureStep::Completed;
+            ac.success = true;
+            ac.status_message = format!("Best: '{}' ({:.0}%)", best_text, best_conf * 100.0);
+
+            tracing::info!(
+                "Auto-configure completed for zone {}: applied best config with confidence {:.2}",
+                zone_idx,
+                best_conf
+            );
+        } else {
+            ac.current_step = AutoConfigureStep::Completed;
+            ac.success = false;
+            ac.error_message = Some("No settings found that produce text".to_string());
+        }
+    }
+
+    /// Process screen recognition to detect current game screen
+    fn process_screen_recognition(&mut self) {
+        // Check if screen recognition is enabled for the active profile
+        let (enabled, check_interval_ms) = {
+            let shared = self.shared_state.read();
+            match shared.active_profile() {
+                Some(profile) => (
+                    profile.screen_recognition_enabled,
+                    profile.screen_check_interval_ms,
+                ),
+                None => (false, 500),
+            }
+        };
+
+        if !enabled {
+            // Clear screen state if recognition was disabled
+            let mut shared = self.shared_state.write();
+            if shared.runtime.current_screen.is_some() {
+                shared.runtime.clear_screen();
+            }
+            return;
+        }
+
+        // Check if enough time has passed since last check
+        let elapsed = self.last_screen_check.elapsed();
+        if elapsed.as_millis() < check_interval_ms as u128 {
+            return;
+        }
+
+        self.last_screen_check = Instant::now();
+
+        // Get a frame from capture
+        let frame = {
+            let capture_guard = self.capture_manager.lock();
+            if let Some(ref capture) = *capture_guard {
+                capture.try_next_frame()
+            } else {
+                None
+            }
+        };
+
+        let Some(frame) = frame else {
+            return;
+        };
+
+        if frame.width == 0 || frame.height == 0 {
+            return;
+        }
+
+        // Run screen recognition
+        // Note: For now we don't provide an OCR function for text anchors
+        // This could be added later by integrating with the vision pipeline
+        let result = self
+            .screen_recognizer
+            .recognize::<fn(u32, u32, u32, u32) -> Option<String>>(
+                &frame.data,
+                frame.width,
+                frame.height,
+                None, // No OCR function for text anchors yet
+            );
+
+        // Update shared state with result
+        let mut shared = self.shared_state.write();
+        let changed = shared.runtime.update_screen(result.clone());
+
+        if changed {
+            if let Some(ref screen) = shared.runtime.current_screen {
+                tracing::info!(
+                    "Screen changed to '{}' (confidence: {:.0}%)",
+                    screen.screen_name,
+                    screen.confidence * 100.0
+                );
+            } else if shared.runtime.previous_screen_id.is_some() {
+                tracing::info!("Screen recognition: no screen matched");
+            }
+        }
+
+        // Update timing stat
+        shared.runtime.last_screen_check_ms = elapsed.as_millis() as u64;
+    }
+
+    /// Reload screens into the recognizer from the active profile
+    fn reload_screens_from_profile(&mut self) {
+        if let Some(ref profile) = self.active_profile {
+            if !profile.screens.is_empty() {
+                self.screen_recognizer.load_screens(profile.screens.clone());
+                tracing::info!(
+                    "Reloaded {} screens for recognition from profile '{}'",
+                    profile.screens.len(),
+                    profile.name
+                );
+            } else {
+                // Clear screens if profile has none
+                self.screen_recognizer.load_screens(vec![]);
+            }
+        } else {
+            // No active profile, clear screens
+            self.screen_recognizer.load_screens(vec![]);
         }
     }
 }
@@ -1107,4 +2422,123 @@ pub fn run_dashboard(shared_state: Arc<RwLock<SharedAppState>>) -> Result<(), ef
         DashboardApp::options(),
         Box::new(|_cc| Ok(Box::new(app))),
     )
+}
+
+/// Filter OCR text based on the expected content type
+/// This helps clean up OCR results by removing characters that don't match the expected type
+fn filter_text_by_content_type(text: &str, content_type: &ContentType) -> String {
+    match content_type {
+        ContentType::Text => {
+            // For text, just trim whitespace
+            text.trim().to_string()
+        }
+        ContentType::Number => {
+            // Keep only digits, decimal points, commas (for thousands), and minus sign
+            // Also handle common OCR mistakes: O->0, l/I->1, S->5, B->8
+            let cleaned: String = text
+                .chars()
+                .map(|c| match c {
+                    'O' | 'o' => '0',
+                    'l' | 'I' | '|' => '1',
+                    'S' | 's' => '5',
+                    'B' => '8',
+                    _ => c,
+                })
+                .filter(|c| c.is_ascii_digit() || *c == '.' || *c == ',' || *c == '-')
+                .collect();
+            cleaned
+        }
+        ContentType::Percentage => {
+            // Keep digits, decimal points, and percent sign
+            let cleaned: String = text
+                .chars()
+                .map(|c| match c {
+                    'O' | 'o' => '0',
+                    'l' | 'I' | '|' => '1',
+                    'S' | 's' => '5',
+                    'B' => '8',
+                    _ => c,
+                })
+                .filter(|c| c.is_ascii_digit() || *c == '.' || *c == '%' || *c == '-')
+                .collect();
+            // Ensure % is at the end if present anywhere
+            if cleaned.contains('%') {
+                let without_percent: String = cleaned.chars().filter(|c| *c != '%').collect();
+                format!("{}%", without_percent)
+            } else {
+                cleaned
+            }
+        }
+        ContentType::Time => {
+            // Keep digits and colons for time formats like 12:34 or 1:23:45
+            let cleaned: String = text
+                .chars()
+                .map(|c| match c {
+                    'O' | 'o' => '0',
+                    'l' | 'I' | '|' => '1',
+                    _ => c,
+                })
+                .filter(|c| c.is_ascii_digit() || *c == ':')
+                .collect();
+            cleaned
+        }
+    }
+}
+
+/// Extract a region from BGRA frame data and encode as PNG
+fn extract_region_as_png(
+    frame_data: &[u8],
+    frame_width: u32,
+    frame_height: u32,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+) -> Option<Vec<u8>> {
+    use image::{ImageBuffer, Rgba};
+
+    // Validate bounds
+    if x >= frame_width || y >= frame_height {
+        return None;
+    }
+
+    let x = x.min(frame_width);
+    let y = y.min(frame_height);
+    let width = width.min(frame_width.saturating_sub(x));
+    let height = height.min(frame_height.saturating_sub(y));
+
+    if width == 0 || height == 0 {
+        return None;
+    }
+
+    // Create image buffer for the region
+    let mut region: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
+
+    for ry in 0..height {
+        for rx in 0..width {
+            let src_x = x + rx;
+            let src_y = y + ry;
+            let idx = ((src_y * frame_width + src_x) * 4) as usize;
+
+            if idx + 3 < frame_data.len() {
+                // BGRA -> RGBA
+                let b = frame_data[idx];
+                let g = frame_data[idx + 1];
+                let r = frame_data[idx + 2];
+                let a = frame_data[idx + 3];
+                region.put_pixel(rx, ry, Rgba([r, g, b, a]));
+            }
+        }
+    }
+
+    // Encode as PNG
+    let mut png_data = Vec::new();
+    let mut cursor = std::io::Cursor::new(&mut png_data);
+
+    if let Err(e) = region.write_to(&mut cursor, image::ImageFormat::Png) {
+        tracing::warn!("Failed to encode region as PNG: {}", e);
+        return None;
+    }
+
+    Some(png_data)
 }

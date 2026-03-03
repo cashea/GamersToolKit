@@ -1,7 +1,10 @@
+#![allow(dead_code)]
 //! Dashboard view state management
 
+use crate::config::DashboardViewSetting;
+use crate::storage::profiles::{GameProfile, OcrRegion};
+use std::collections::HashMap;
 use std::time::Instant;
-use crate::storage::profiles::{GameProfile, LabeledRegion};
 
 /// OCR result granularity - word-level or line-level
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -21,6 +24,7 @@ pub enum DashboardView {
     Capture,
     Overlay,
     Vision,
+    Screens,
     Profiles,
     Settings,
 }
@@ -33,6 +37,7 @@ impl DashboardView {
             DashboardView::Capture => "Capture",
             DashboardView::Overlay => "Overlay",
             DashboardView::Vision => "Vision",
+            DashboardView::Screens => "Screens",
             DashboardView::Profiles => "Profiles",
             DashboardView::Settings => "Settings",
         }
@@ -45,8 +50,34 @@ impl DashboardView {
             DashboardView::Capture => "C",
             DashboardView::Overlay => "O",
             DashboardView::Vision => "V",
+            DashboardView::Screens => "S",
             DashboardView::Profiles => "P",
-            DashboardView::Settings => "S",
+            DashboardView::Settings => "G", // "Gear" for settings
+        }
+    }
+
+    /// Convert to persistable setting
+    pub fn to_setting(self) -> DashboardViewSetting {
+        match self {
+            DashboardView::Home => DashboardViewSetting::Home,
+            DashboardView::Capture => DashboardViewSetting::Capture,
+            DashboardView::Overlay => DashboardViewSetting::Overlay,
+            DashboardView::Vision => DashboardViewSetting::Vision,
+            DashboardView::Screens => DashboardViewSetting::Vision, // Map to Vision for now
+            DashboardView::Profiles => DashboardViewSetting::Profiles,
+            DashboardView::Settings => DashboardViewSetting::Settings,
+        }
+    }
+
+    /// Convert from persistable setting
+    pub fn from_setting(setting: DashboardViewSetting) -> Self {
+        match setting {
+            DashboardViewSetting::Home => DashboardView::Home,
+            DashboardViewSetting::Capture => DashboardView::Capture,
+            DashboardViewSetting::Overlay => DashboardView::Overlay,
+            DashboardViewSetting::Vision => DashboardView::Vision,
+            DashboardViewSetting::Profiles => DashboardView::Profiles,
+            DashboardViewSetting::Settings => DashboardView::Settings,
         }
     }
 }
@@ -64,6 +95,8 @@ pub struct DashboardState {
     pub overlay: OverlayViewState,
     /// Vision view state
     pub vision: VisionViewState,
+    /// Screens view state
+    pub screens: ScreensViewState,
     /// Profiles view state
     pub profiles: ProfilesViewState,
     /// Settings view state
@@ -78,6 +111,7 @@ impl Default for DashboardState {
             capture: CaptureViewState::default(),
             overlay: OverlayViewState::default(),
             vision: VisionViewState::default(),
+            screens: ScreensViewState::default(),
             profiles: ProfilesViewState::default(),
             settings: SettingsViewState::default(),
         }
@@ -92,6 +126,7 @@ pub struct HomeViewState {
 }
 
 /// Capture view state
+#[derive(Default)]
 pub struct CaptureViewState {
     /// Available windows for capture
     pub available_windows: Vec<String>,
@@ -126,26 +161,12 @@ impl std::fmt::Debug for CaptureViewState {
             .field("search_query", &self.search_query)
             .field("preview_enabled", &self.preview_enabled)
             .field("last_refresh", &self.last_refresh)
-            .field("preview_texture", &self.preview_texture.as_ref().map(|_| "<texture>"))
+            .field(
+                "preview_texture",
+                &self.preview_texture.as_ref().map(|_| "<texture>"),
+            )
             .field("preview_frame_size", &self.preview_frame_size)
             .finish()
-    }
-}
-
-impl Default for CaptureViewState {
-    fn default() -> Self {
-        Self {
-            available_windows: Vec::new(),
-            available_monitors: Vec::new(),
-            target_type: 0,
-            selected_window: None,
-            selected_monitor: None,
-            search_query: String::new(),
-            preview_enabled: false,
-            last_refresh: None,
-            preview_texture: None,
-            preview_frame_size: None,
-        }
     }
 }
 
@@ -192,8 +213,10 @@ pub struct VisionViewState {
     pub auto_run_ocr: bool,
     /// Show bounding boxes on preview
     pub show_bounding_boxes: bool,
-    /// Confidence threshold for display
-    pub confidence_threshold: f32,
+    /// Match threshold for fuzzy text matching (0.0 - 1.0)
+    pub match_threshold: f32,
+    /// Image preprocessing settings for OCR
+    pub preprocessing: crate::config::OcrPreprocessing,
     /// Last OCR results
     pub last_ocr_results: Vec<OcrResultDisplay>,
     /// Last processing time in ms
@@ -211,25 +234,21 @@ pub struct VisionViewState {
     /// Last frame height
     pub last_frame_height: u32,
 
-    // Region labeling state
-    /// Search text for finding regions
-    pub region_search_text: String,
-    /// Filtered OCR results matching search text
-    pub matching_regions: Vec<usize>,
-    /// Currently selected region index (for labeling)
-    pub selected_region_index: Option<usize>,
-    /// Label text being entered for selected region
-    pub pending_label: String,
-    /// Saved labeled regions
-    pub labeled_regions: Vec<LabeledRegion>,
-    /// Live values for labeled regions (updated from OCR results)
-    pub labeled_regions_live: Vec<LabeledRegionLive>,
-    /// Index of labeled region being edited (None = creating new)
-    pub editing_labeled_region: Option<usize>,
-    /// Flag indicating labels have been modified and need saving
-    pub labels_dirty: bool,
-    /// Flag to trigger immediate profile save
-    pub pending_profile_save: bool,
+    // Zone OCR state
+    /// Zone selection state
+    pub zone_selection: ZoneSelectionState,
+    /// OCR zones defined for current profile
+    pub ocr_zones: Vec<OcrRegion>,
+    /// Latest OCR results per zone
+    pub zone_ocr_results: HashMap<String, ZoneOcrResult>,
+    /// Whether to show zone overlays in preview
+    pub show_zone_overlays: bool,
+    /// Request to enter zone selection mode (triggers overlay mode change)
+    pub pending_zone_selection_mode: bool,
+    /// Flag indicating zones have been modified and need saving
+    pub zones_dirty: bool,
+    /// Error message for zone selection (e.g., overlay failed to start)
+    pub zone_selection_error: Option<String>,
 }
 
 impl std::fmt::Debug for VisionViewState {
@@ -249,7 +268,7 @@ impl Default for VisionViewState {
     fn default() -> Self {
         Self {
             selected_backend: crate::vision::OcrBackend::WindowsOcr, // Default to Windows OCR
-            ocr_granularity: OcrGranularity::Word, // Default to word-level
+            ocr_granularity: OcrGranularity::Word,                   // Default to word-level
             models_ready: false,
             detection_model_ready: false,
             recognition_model_ready: false,
@@ -263,7 +282,8 @@ impl Default for VisionViewState {
             pending_ocr_run: false,
             auto_run_ocr: false,
             show_bounding_boxes: true,
-            confidence_threshold: 0.5,
+            match_threshold: 0.8,
+            preprocessing: crate::config::OcrPreprocessing::default(),
             last_ocr_results: Vec::new(),
             last_processing_time_ms: 0,
             last_error: None,
@@ -272,16 +292,14 @@ impl Default for VisionViewState {
             last_frame_data: None,
             last_frame_width: 0,
             last_frame_height: 0,
-            // Region labeling defaults
-            region_search_text: String::new(),
-            matching_regions: Vec::new(),
-            selected_region_index: None,
-            pending_label: String::new(),
-            labeled_regions: Vec::new(),
-            labeled_regions_live: Vec::new(),
-            editing_labeled_region: None,
-            labels_dirty: false,
-            pending_profile_save: false,
+            // Zone OCR defaults
+            zone_selection: ZoneSelectionState::default(),
+            ocr_zones: Vec::new(),
+            zone_ocr_results: HashMap::new(),
+            show_zone_overlays: true,
+            pending_zone_selection_mode: false,
+            zones_dirty: false,
+            zone_selection_error: None,
         }
     }
 }
@@ -297,106 +315,106 @@ pub struct OcrResultDisplay {
     pub confidence: f32,
 }
 
-/// Live value for a labeled region, updated from OCR results
+/// State for zone selection mode
 #[derive(Debug, Clone, Default)]
-pub struct LabeledRegionLive {
-    /// Current detected text (None if no match found)
-    pub current_text: Option<String>,
-    /// Current confidence score
-    pub current_confidence: Option<f32>,
-    /// Index of the matched OCR result
-    pub matched_ocr_index: Option<usize>,
+pub struct ZoneSelectionState {
+    /// Whether zone selection mode is active
+    pub is_selecting: bool,
+    /// Current selection rectangle (normalized 0.0-1.0): (x, y, width, height)
+    pub current_selection: Option<(f32, f32, f32, f32)>,
+    /// Name being entered for new zone
+    pub pending_zone_name: String,
+    /// Content type for new zone
+    pub pending_content_type: crate::storage::profiles::ContentType,
+    /// Whether to show the zone naming dialog
+    pub show_naming_dialog: bool,
+    /// Zone being edited (None = creating new)
+    pub editing_zone_id: Option<String>,
+    /// Whether to show the zone settings dialog
+    pub show_settings_dialog: bool,
+    /// Zone index being configured (for settings dialog)
+    pub settings_zone_index: Option<usize>,
+    /// Pending preprocessing settings for the zone being edited
+    pub pending_preprocessing: crate::config::OcrPreprocessing,
+    /// Whether to use custom preprocessing for this zone
+    pub pending_use_custom_preprocessing: bool,
+    /// Zone index being repositioned (None = creating new zone)
+    pub repositioning_zone_index: Option<usize>,
+    /// Auto-configure state for a zone
+    pub auto_configure: Option<AutoConfigureState>,
 }
 
-impl VisionViewState {
-    /// Update labeled regions with current OCR results by matching bounds
-    /// Returns true if any labels were updated
-    pub fn update_labels_from_ocr(&mut self) -> bool {
-        if self.labeled_regions.is_empty() || self.last_ocr_results.is_empty() {
-            // Clear live values if no OCR results
-            self.labeled_regions_live.clear();
-            return false;
-        }
-
-        // Ensure live values vec matches labeled_regions length
-        self.labeled_regions_live.resize_with(
-            self.labeled_regions.len(),
-            LabeledRegionLive::default,
-        );
-
-        let mut any_updated = false;
-
-        for (label_idx, labeled) in self.labeled_regions.iter().enumerate() {
-            let live = &mut self.labeled_regions_live[label_idx];
-            let old_text = live.current_text.clone();
-
-            // Find best matching OCR result by bounds overlap
-            let mut best_match: Option<(usize, f32)> = None; // (index, overlap_score)
-
-            for (ocr_idx, ocr_result) in self.last_ocr_results.iter().enumerate() {
-                let overlap = calculate_bounds_overlap(labeled.bounds, ocr_result.bounds);
-                if overlap > 0.3 {
-                    // At least 30% overlap required
-                    if best_match.map_or(true, |(_, best_overlap)| overlap > best_overlap) {
-                        best_match = Some((ocr_idx, overlap));
-                    }
-                }
-            }
-
-            if let Some((ocr_idx, _)) = best_match {
-                let ocr_result = &self.last_ocr_results[ocr_idx];
-                live.current_text = Some(ocr_result.text.clone());
-                live.current_confidence = Some(ocr_result.confidence);
-                live.matched_ocr_index = Some(ocr_idx);
-
-                if old_text.as_ref() != Some(&ocr_result.text) {
-                    any_updated = true;
-                }
-            } else {
-                // No match found - clear live values
-                if live.current_text.is_some() {
-                    any_updated = true;
-                }
-                live.current_text = None;
-                live.current_confidence = None;
-                live.matched_ocr_index = None;
-            }
-        }
-
-        any_updated
-    }
+/// State for auto-configure process
+#[derive(Debug, Clone)]
+pub struct AutoConfigureState {
+    /// Zone index being auto-configured
+    pub zone_index: usize,
+    /// Current step in the auto-configure process
+    pub current_step: AutoConfigureStep,
+    /// Current scale being tested (1-4)
+    pub current_scale: u32,
+    /// Current preprocessing enabled state
+    pub current_preprocessing_enabled: bool,
+    /// Current grayscale setting
+    pub current_grayscale: bool,
+    /// Current invert setting
+    pub current_invert: bool,
+    /// Current contrast value
+    pub current_contrast: f32,
+    /// Total combinations to try
+    pub total_combinations: usize,
+    /// Current combination index
+    pub current_combination: usize,
+    /// Status message to display
+    pub status_message: String,
+    /// Whether auto-configure completed successfully
+    pub success: bool,
+    /// Error message if failed
+    pub error_message: Option<String>,
+    /// Best configuration found so far (preprocessing settings)
+    pub best_preprocessing: Option<crate::config::OcrPreprocessing>,
+    /// Best confidence score found
+    pub best_confidence: f32,
+    /// Best text found
+    pub best_text: String,
 }
 
-/// Calculate overlap ratio between two bounding boxes
-/// Returns a value from 0.0 (no overlap) to 1.0 (perfect overlap)
-fn calculate_bounds_overlap(a: (u32, u32, u32, u32), b: (u32, u32, u32, u32)) -> f32 {
-    let (ax, ay, aw, ah) = a;
-    let (bx, by, bw, bh) = b;
-
-    // Calculate intersection
-    let x1 = ax.max(bx);
-    let y1 = ay.max(by);
-    let x2 = (ax + aw).min(bx + bw);
-    let y2 = (ay + ah).min(by + bh);
-
-    if x1 >= x2 || y1 >= y2 {
-        return 0.0; // No overlap
-    }
-
-    let intersection_area = (x2 - x1) * (y2 - y1);
-    let a_area = aw * ah;
-    let b_area = bw * bh;
-
-    // Use IoU (Intersection over Union) for overlap score
-    let union_area = a_area + b_area - intersection_area;
-    if union_area == 0 {
-        return 0.0;
-    }
-
-    intersection_area as f32 / union_area as f32
+/// Steps in the auto-configure process
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutoConfigureStep {
+    /// Starting the process
+    Starting,
+    /// Testing a configuration
+    Testing,
+    /// Completed (success or failure)
+    Completed,
 }
 
-// LabeledRegion is now imported from crate::storage::profiles
+/// Zone OCR result for display
+#[derive(Debug, Clone)]
+pub struct ZoneOcrResult {
+    /// Zone ID
+    pub zone_id: String,
+    /// Zone name
+    pub zone_name: String,
+    /// Detected text
+    pub text: String,
+    /// Last update timestamp
+    pub last_updated: Instant,
+}
+
+/// Action to perform on a profile (for UI-to-app communication)
+#[derive(Debug, Clone)]
+pub enum ProfileAction {
+    /// Activate a profile by ID
+    Activate(String),
+    /// Deactivate the current profile
+    Deactivate,
+    /// Create a new profile (includes the profile to save)
+    Create(GameProfile),
+    /// Delete a profile by ID
+    Delete(String),
+}
 
 /// Profiles view state
 #[derive(Debug, Default)]
@@ -415,6 +433,8 @@ pub struct ProfilesViewState {
     pub new_profile_name: String,
     /// New profile executable
     pub new_profile_executable: String,
+    /// Pending profile action (processed by DashboardApp)
+    pub pending_action: Option<ProfileAction>,
 }
 
 /// Settings view state
@@ -433,4 +453,62 @@ pub enum SettingsSection {
     Capture,
     Overlay,
     Performance,
+}
+
+/// Pending text anchor data: (screen_id, detected_text, bounds)
+pub type PendingTextAnchor = Option<(String, String, (f32, f32, f32, f32))>;
+
+/// Screen recognition view state
+#[derive(Default)]
+pub struct ScreensViewState {
+    /// Currently selected screen ID in the hierarchy tree
+    pub selected_screen_id: Option<String>,
+    /// Whether to show the add screen dialog
+    pub show_add_dialog: bool,
+    /// Whether to show the delete confirmation dialog
+    pub show_delete_confirm: bool,
+    /// New screen name (for add dialog)
+    pub new_screen_name: String,
+    /// New screen parent ID (for add dialog)
+    pub new_screen_parent_id: Option<String>,
+    /// New screen match mode (for add dialog)
+    pub new_screen_match_mode: crate::storage::profiles::ScreenMatchMode,
+    /// Whether screen recognition is running
+    pub recognition_running: bool,
+    /// Pending request to capture full screen template
+    pub pending_full_capture: bool,
+    /// Pending request to capture visual anchor
+    pub pending_anchor_capture: Option<String>, // Screen ID to add anchor to
+    /// Pending request to capture text anchor
+    pub pending_text_anchor_capture: Option<String>, // Screen ID to add anchor to
+    /// Screens marked as dirty (need saving)
+    pub screens_dirty: bool,
+    /// Error message to display
+    pub error_message: Option<String>,
+    /// Preview texture for current screen template
+    pub preview_texture: Option<egui::TextureHandle>,
+    /// Pending text anchor waiting for user confirmation: (screen_id, detected_text, bounds)
+    pub pending_text_for_anchor: PendingTextAnchor,
+    /// Editable text field for text anchor confirmation dialog
+    pub editing_text_anchor_text: String,
+    /// Screen ID being dragged for priority reordering
+    pub dragging_screen_id: Option<String>,
+    /// Drop target screen ID (screen being hovered over during drag)
+    pub drop_target_screen_id: Option<String>,
+    /// Whether to drop before (true) or after (false) the target
+    pub drop_before_target: bool,
+}
+
+impl std::fmt::Debug for ScreensViewState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ScreensViewState")
+            .field("selected_screen_id", &self.selected_screen_id)
+            .field("show_add_dialog", &self.show_add_dialog)
+            .field("show_delete_confirm", &self.show_delete_confirm)
+            .field("new_screen_name", &self.new_screen_name)
+            .field("recognition_running", &self.recognition_running)
+            .field("screens_dirty", &self.screens_dirty)
+            .field("has_preview_texture", &self.preview_texture.is_some())
+            .finish()
+    }
 }

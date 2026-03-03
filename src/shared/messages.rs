@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Message types for communication between dashboard and overlay
 
 use crate::analysis::Tip;

@@ -1,8 +1,8 @@
 //! Sidebar navigation component
 
-use egui::{Color32, RichText, Rounding, Sense, Vec2};
 use crate::dashboard::state::DashboardView;
-use crate::dashboard::theme::{ThemeColors, color_with_alpha};
+use crate::dashboard::theme::{color_with_alpha, ThemeColors};
+use egui::{Color32, RichText, Rounding, Sense, Vec2};
 
 /// Render the sidebar navigation
 pub fn render_sidebar(ui: &mut egui::Ui, current_view: &mut DashboardView) {
@@ -16,7 +16,7 @@ pub fn render_sidebar(ui: &mut egui::Ui, current_view: &mut DashboardView) {
                 RichText::new("GTK")
                     .size(24.0)
                     .color(ThemeColors::ACCENT_PRIMARY)
-                    .strong()
+                    .strong(),
             );
         });
 
@@ -26,7 +26,7 @@ pub fn render_sidebar(ui: &mut egui::Ui, current_view: &mut DashboardView) {
             ui.label(
                 RichText::new("GamersToolKit")
                     .size(11.0)
-                    .color(ThemeColors::TEXT_MUTED)
+                    .color(ThemeColors::TEXT_MUTED),
             );
         });
 
@@ -40,6 +40,7 @@ pub fn render_sidebar(ui: &mut egui::Ui, current_view: &mut DashboardView) {
             DashboardView::Capture,
             DashboardView::Overlay,
             DashboardView::Vision,
+            DashboardView::Screens,
             DashboardView::Profiles,
             DashboardView::Settings,
         ] {
@@ -58,7 +59,7 @@ pub fn render_sidebar(ui: &mut egui::Ui, current_view: &mut DashboardView) {
                 ui.label(
                     RichText::new("v0.1.0")
                         .size(10.0)
-                        .color(ThemeColors::TEXT_MUTED)
+                        .color(ThemeColors::TEXT_MUTED),
                 );
             });
             ui.add_space(8.0);

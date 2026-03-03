@@ -1,14 +1,16 @@
+#![allow(dead_code)]
 //! Screen Capture Layer
 //!
 //! Uses Windows Graphics Capture API for safe, anti-cheat compliant screen capture.
 //! This is a read-only operation that captures pixels without any game interaction.
 
 pub mod frame;
+pub use frame::CapturedFrame;
 
 use anyhow::{Context, Result};
-use crossbeam_channel::{Receiver, Sender, bounded};
-use std::sync::Arc;
+use crossbeam_channel::{bounded, Receiver, Sender};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use windows_capture::{
     capture::{Context as CaptureContext, GraphicsCaptureApiHandler},
@@ -16,14 +18,11 @@ use windows_capture::{
     graphics_capture_api::InternalCaptureControl,
     monitor::Monitor,
     settings::{
-        ColorFormat, CursorCaptureSettings, DrawBorderSettings,
-        Settings, SecondaryWindowSettings, MinimumUpdateIntervalSettings,
-        DirtyRegionSettings,
+        ColorFormat, CursorCaptureSettings, DirtyRegionSettings, DrawBorderSettings,
+        MinimumUpdateIntervalSettings, SecondaryWindowSettings, Settings,
     },
     window::Window,
 };
-
-use crate::capture::frame::CapturedFrame;
 
 /// Screen capture configuration
 #[derive(Debug, Clone)]
@@ -317,4 +316,112 @@ fn run_capture(
     }
 
     Ok(())
+}
+
+/// Capture a single frame from the given target and return it.
+///
+/// This creates a temporary capture session, grabs the first frame,
+/// then stops. Useful for on-demand screenshots without a persistent capture loop.
+pub fn capture_frame_once(target: &CaptureTarget) -> Result<CapturedFrame> {
+    let config = CaptureConfig {
+        target: target.clone(),
+        max_fps: 30,
+        capture_cursor: false,
+        draw_border: false,
+    };
+
+    let mut capture = ScreenCapture::new(config)?;
+    capture.start()?;
+
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(5);
+
+    loop {
+        if let Some(frame) = capture.try_next_frame() {
+            let _ = capture.stop();
+            return Ok(frame);
+        }
+        if start.elapsed() > timeout {
+            let _ = capture.stop();
+            return Err(anyhow::anyhow!(
+                "Timeout waiting for frame from {:?}",
+                target
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
+/// Bring a window to the foreground by title (partial match)
+///
+/// Uses Windows API to find the window and set it as the foreground window.
+/// Returns true if successful, false if window not found or operation failed.
+pub fn bring_window_to_front(title: &str) -> bool {
+    use std::sync::Mutex;
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindowTextW, IsIconic, SetForegroundWindow, ShowWindow, SW_RESTORE,
+    };
+
+    // Thread-safe storage for the found window handle
+    static FOUND_HWND: Mutex<Option<isize>> = Mutex::new(None);
+
+    let title_lower = title.to_lowercase();
+
+    // Reset the found handle
+    *FOUND_HWND.lock().unwrap() = None;
+
+    // Store title in thread-local for the callback
+    thread_local! {
+        static SEARCH_TITLE: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    }
+    SEARCH_TITLE.with(|t| *t.borrow_mut() = title_lower.clone());
+
+    unsafe extern "system" fn enum_callback(
+        hwnd: HWND,
+        _: windows::Win32::Foundation::LPARAM,
+    ) -> windows::Win32::Foundation::BOOL {
+        let mut buffer = [0u16; 512];
+        let len = GetWindowTextW(hwnd, &mut buffer);
+        if len > 0 {
+            let window_title = String::from_utf16_lossy(&buffer[..len as usize]).to_lowercase();
+
+            SEARCH_TITLE.with(|t| {
+                if window_title.contains(&*t.borrow()) {
+                    *FOUND_HWND.lock().unwrap() = Some(hwnd.0 as isize);
+                }
+            });
+
+            // Check if we found it
+            if FOUND_HWND.lock().unwrap().is_some() {
+                return windows::Win32::Foundation::FALSE; // Stop enumeration
+            }
+        }
+        windows::Win32::Foundation::TRUE // Continue enumeration
+    }
+
+    unsafe {
+        let _ = EnumWindows(Some(enum_callback), windows::Win32::Foundation::LPARAM(0));
+
+        if let Some(hwnd_val) = *FOUND_HWND.lock().unwrap() {
+            let hwnd = HWND(hwnd_val as *mut std::ffi::c_void);
+
+            // Restore window if minimized
+            if IsIconic(hwnd).as_bool() {
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+            }
+
+            // Bring to foreground
+            if SetForegroundWindow(hwnd).as_bool() {
+                info!("Brought window '{}' to foreground", title);
+                return true;
+            } else {
+                warn!("Failed to bring window '{}' to foreground", title);
+            }
+        } else {
+            warn!("Window '{}' not found for bringing to front", title);
+        }
+    }
+
+    false
 }

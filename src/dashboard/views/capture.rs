@@ -22,7 +22,7 @@ pub fn render_capture_view(
     ui.label(
         RichText::new("Select a window or monitor to capture")
             .size(14.0)
-            .color(ThemeColors::TEXT_SECONDARY)
+            .color(ThemeColors::TEXT_SECONDARY),
     );
 
     ui.add_space(24.0);
@@ -40,7 +40,7 @@ pub fn render_capture_view(
             ui.label(
                 RichText::new(format!("Last refreshed: {}s ago", elapsed))
                     .size(12.0)
-                    .color(ThemeColors::TEXT_MUTED)
+                    .color(ThemeColors::TEXT_MUTED),
             );
         }
     });
@@ -75,12 +75,10 @@ pub fn render_capture_view(
         ui.add(
             egui::TextEdit::singleline(&mut view_state.search_query)
                 .hint_text("Type to filter...")
-                .desired_width(200.0)
+                .desired_width(200.0),
         );
-        if !view_state.search_query.is_empty() {
-            if ui.small_button("Clear").clicked() {
-                view_state.search_query.clear();
-            }
+        if !view_state.search_query.is_empty() && ui.small_button("Clear").clicked() {
+            view_state.search_query.clear();
         }
     });
 
@@ -105,7 +103,12 @@ pub fn render_capture_view(
     if use_two_columns {
         ui.columns(2, |columns| {
             render_source_list_column(&mut columns[0], view_state, shared_state);
-            render_capture_settings_column(&mut columns[1], view_state, shared_state, preview_frame);
+            render_capture_settings_column(
+                &mut columns[1],
+                view_state,
+                shared_state,
+                preview_frame,
+            );
         });
     } else {
         render_source_list_column(ui, view_state, shared_state);
@@ -176,7 +179,8 @@ fn render_capture_settings_column(
 
                         // Update texture if we have a new frame
                         if let Some(frame) = preview_frame {
-                            let needs_update = view_state.preview_frame_size
+                            let needs_update = view_state
+                                .preview_frame_size
                                 .map(|(w, h)| w != frame.width || h != frame.height)
                                 .unwrap_or(true)
                                 || view_state.preview_texture.is_none();
@@ -205,7 +209,8 @@ fn render_capture_settings_column(
                         if let Some(ref texture) = view_state.preview_texture {
                             let tex_size = texture.size_vec2();
                             // Scale to fit preview area while maintaining aspect ratio
-                            let scale = (preview_size.x / tex_size.x).min(preview_size.y / tex_size.y);
+                            let scale =
+                                (preview_size.x / tex_size.x).min(preview_size.y / tex_size.y);
                             let scaled_size = tex_size * scale;
 
                             ui.centered_and_justified(|ui| {
@@ -222,7 +227,7 @@ fn render_capture_settings_column(
                                 ui.label(
                                     RichText::new(message)
                                         .size(11.0)
-                                        .color(ThemeColors::TEXT_MUTED)
+                                        .color(ThemeColors::TEXT_MUTED),
                                 );
                             });
                         }
@@ -239,18 +244,25 @@ fn render_capture_settings_column(
 
             // Start/Stop capture button (moved up for visibility)
             let is_capturing = shared_state.read().runtime.is_capturing;
-            let capture_btn_text = if is_capturing { "Stop Capture" } else { "Start Capture" };
+            let capture_btn_text = if is_capturing {
+                "Stop Capture"
+            } else {
+                "Start Capture"
+            };
             let capture_btn_color = if is_capturing {
                 ThemeColors::ACCENT_ERROR
             } else {
                 ThemeColors::ACCENT_SUCCESS
             };
 
-            if ui.add(
-                egui::Button::new(RichText::new(capture_btn_text).color(egui::Color32::WHITE))
-                    .fill(capture_btn_color)
-                    .min_size(egui::vec2(140.0, 32.0))
-            ).clicked() {
+            if ui
+                .add(
+                    egui::Button::new(RichText::new(capture_btn_text).color(egui::Color32::WHITE))
+                        .fill(capture_btn_color)
+                        .min_size(egui::vec2(140.0, 32.0)),
+                )
+                .clicked()
+            {
                 let mut state = shared_state.write();
                 state.runtime.capture_command = Some(if is_capturing {
                     CaptureCommand::Stop
@@ -265,22 +277,19 @@ fn render_capture_settings_column(
                 let fps = shared_state.read().runtime.capture_fps;
                 ui.label(
                     RichText::new(format!("Capturing at {:.1} FPS", fps))
-                        .color(ThemeColors::ACCENT_SUCCESS)
+                        .color(ThemeColors::ACCENT_SUCCESS),
                 );
             }
-
         });
 }
 
 /// Refresh available capture sources
 fn refresh_sources(view_state: &mut CaptureViewState) {
     // Get available windows
-    view_state.available_windows = ScreenCapture::list_windows()
-        .unwrap_or_default();
+    view_state.available_windows = ScreenCapture::list_windows().unwrap_or_default();
 
     // Get available monitors
-    view_state.available_monitors = ScreenCapture::list_monitors()
-        .unwrap_or_default();
+    view_state.available_monitors = ScreenCapture::list_monitors().unwrap_or_default();
 
     view_state.last_refresh = Some(Instant::now());
 }
@@ -292,17 +301,15 @@ fn render_window_list(
     shared_state: &Arc<RwLock<SharedAppState>>,
 ) {
     let filter = view_state.search_query.to_lowercase();
-    let filtered_windows: Vec<_> = view_state.available_windows
+    let filtered_windows: Vec<_> = view_state
+        .available_windows
         .iter()
         .enumerate()
         .filter(|(_, w)| filter.is_empty() || w.to_lowercase().contains(&filter))
         .collect();
 
     if filtered_windows.is_empty() {
-        ui.label(
-            RichText::new("No windows found")
-                .color(ThemeColors::TEXT_MUTED)
-        );
+        ui.label(RichText::new("No windows found").color(ThemeColors::TEXT_MUTED));
         return;
     }
 
@@ -326,17 +333,15 @@ fn render_monitor_list(
     shared_state: &Arc<RwLock<SharedAppState>>,
 ) {
     let filter = view_state.search_query.to_lowercase();
-    let filtered_monitors: Vec<_> = view_state.available_monitors
+    let filtered_monitors: Vec<_> = view_state
+        .available_monitors
         .iter()
         .enumerate()
         .filter(|(_, m)| filter.is_empty() || m.to_lowercase().contains(&filter))
         .collect();
 
     if filtered_monitors.is_empty() {
-        ui.label(
-            RichText::new("No monitors found")
-                .color(ThemeColors::TEXT_MUTED)
-        );
+        ui.label(RichText::new("No monitors found").color(ThemeColors::TEXT_MUTED));
         return;
     }
 
@@ -356,12 +361,14 @@ fn render_monitor_list(
 /// Get text describing the current selection
 fn get_current_selection_text(view_state: &CaptureViewState) -> String {
     if let Some(idx) = view_state.selected_window {
-        view_state.available_windows
+        view_state
+            .available_windows
             .get(idx)
             .cloned()
             .unwrap_or_else(|| "Invalid selection".to_string())
     } else if let Some(idx) = view_state.selected_monitor {
-        view_state.available_monitors
+        view_state
+            .available_monitors
             .get(idx)
             .cloned()
             .unwrap_or_else(|| "Invalid selection".to_string())

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Frame data structures for captured screen content
 
 use std::time::Instant;
@@ -113,9 +114,9 @@ mod tests {
     fn create_test_frame() -> CapturedFrame {
         // 2x2 image: Red, Green, Blue, White pixels
         let data = vec![
-            255, 0, 0, 255,     // Red (R,G,B,A)
-            0, 255, 0, 255,     // Green
-            0, 0, 255, 255,     // Blue
+            255, 0, 0, 255, // Red (R,G,B,A)
+            0, 255, 0, 255, // Green
+            0, 0, 255, 255, // Blue
             255, 255, 255, 255, // White
         ];
         CapturedFrame::new(data, 2, 2)
@@ -151,9 +152,9 @@ mod tests {
     fn test_bgra_to_rgba_conversion() {
         // BGRA data: Blue channel first
         let bgra_data = vec![
-            0, 0, 255, 255,     // Blue in BGRA = Red in RGBA
-            0, 255, 0, 255,     // Green stays green
-            255, 0, 0, 255,     // Red in BGRA = Blue in RGBA
+            0, 0, 255, 255, // Blue in BGRA = Red in RGBA
+            0, 255, 0, 255, // Green stays green
+            255, 0, 0, 255, // Red in BGRA = Blue in RGBA
             255, 255, 255, 255, // White stays white
         ];
 
@@ -161,13 +162,13 @@ mod tests {
 
         // After conversion, first pixel should be Red (R=255, G=0, B=0)
         assert_eq!(frame.data[0], 255); // R
-        assert_eq!(frame.data[1], 0);   // G
-        assert_eq!(frame.data[2], 0);   // B
+        assert_eq!(frame.data[1], 0); // G
+        assert_eq!(frame.data[2], 0); // B
         assert_eq!(frame.data[3], 255); // A
 
         // Third pixel should be Blue (R=0, G=0, B=255)
-        assert_eq!(frame.data[8], 0);   // R
-        assert_eq!(frame.data[9], 0);   // G
+        assert_eq!(frame.data[8], 0); // R
+        assert_eq!(frame.data[9], 0); // G
         assert_eq!(frame.data[10], 255); // B
     }
 

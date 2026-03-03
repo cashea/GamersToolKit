@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! SQLite database for persistent storage
 
 use anyhow::Result;

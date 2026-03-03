@@ -18,7 +18,7 @@ egui_overlay = "0.9"
 # Screen Capture (Windows Graphics Capture API)
 windows-capture = "1.4"
 
-# Windows OCR API
+# Windows OCR API and system APIs
 windows = { version = "0.58", features = [
     "Media_Ocr",
     "Graphics_Imaging",
@@ -26,6 +26,8 @@ windows = { version = "0.58", features = [
     "Foundation",
     "Foundation_Collections",
     "Globalization",
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
 ] }
 
 # ML/OCR (ONNX Runtime for PaddleOCR models)
@@ -71,11 +73,25 @@ toml = "0.8"
 parking_lot = "0.12"
 crossbeam-channel = "0.5"
 
+# Fuzzy string matching
+strsim = "0.11"
+
+# UUID generation
+uuid = { version = "1.11", features = ["v4"] }
+
+# Base64 encoding (for screenshot MCP tool)
+base64 = "0.22"
+
 # CLI
 clap = { version = "4.5", features = ["derive"] }
 
 # Global hotkeys
 global-hotkey = "0.6"
+rust-mcp-sdk = "0.8.3"
+tokio-util = "0.7.18"
+rust-mcp-macros = "0.8.1"
+rust-mcp-schema = "0.9.5"
+async-trait = "0.1.89"
 
 [dev-dependencies]
 tempfile = "3.15"

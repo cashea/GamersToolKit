@@ -1,7 +1,8 @@
+#![allow(dead_code)]
 //! Status card component for displaying status information
 
-use egui::{Color32, RichText, Rounding, Vec2};
 use crate::dashboard::theme::ThemeColors;
+use egui::{Color32, RichText, Rounding, Vec2};
 
 /// A card displaying status information
 pub struct StatusCard {
@@ -69,11 +70,8 @@ impl StatusCard {
                         ui.cursor().left_top() + Vec2::new(6.0, 10.0),
                         Vec2::splat(8.0),
                     );
-                    ui.painter().circle_filled(
-                        dot_rect.center(),
-                        4.0,
-                        self.status.color(),
-                    );
+                    ui.painter()
+                        .circle_filled(dot_rect.center(), 4.0, self.status.color());
                     ui.add_space(16.0);
 
                     ui.vertical(|ui| {
@@ -81,7 +79,7 @@ impl StatusCard {
                         ui.label(
                             RichText::new(&self.title)
                                 .size(12.0)
-                                .color(ThemeColors::TEXT_MUTED)
+                                .color(ThemeColors::TEXT_MUTED),
                         );
 
                         ui.add_space(4.0);
@@ -91,7 +89,7 @@ impl StatusCard {
                             RichText::new(&self.value)
                                 .size(18.0)
                                 .color(ThemeColors::TEXT_PRIMARY)
-                                .strong()
+                                .strong(),
                         );
 
                         ui.add_space(4.0);
@@ -100,7 +98,7 @@ impl StatusCard {
                         ui.label(
                             RichText::new(self.status.label())
                                 .size(11.0)
-                                .color(self.status.color())
+                                .color(self.status.color()),
                         );
                     });
                 });

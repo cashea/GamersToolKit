@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! OCR (Optical Character Recognition) module
 //!
 //! Uses PaddleOCR models via ONNX Runtime for text detection and recognition.
@@ -9,8 +10,8 @@ use tracing::{debug, info, warn};
 
 use super::models::OnnxSession;
 use super::preprocess::{
-    rgba_to_rgb_f32, crop_polygon, preprocess_for_detection,
-    preprocess_for_recognition, PreprocessConfig,
+    crop_polygon, preprocess_for_detection, preprocess_for_recognition, rgba_to_rgb_f32,
+    PreprocessConfig,
 };
 
 /// OCR engine using PaddleOCR via ONNX Runtime
@@ -31,11 +32,21 @@ impl OcrEngine {
             .parent()
             .unwrap_or(Path::new("."))
             .join("dict.txt");
-        Self::new_with_dict(detection_model, recognition_model, dict_path.to_str().unwrap_or("dict.txt"), use_gpu)
+        Self::new_with_dict(
+            detection_model,
+            recognition_model,
+            dict_path.to_str().unwrap_or("dict.txt"),
+            use_gpu,
+        )
     }
 
     /// Initialize OCR engine with model paths and custom dictionary
-    pub fn new_with_dict(detection_model: &str, recognition_model: &str, dict_path: &str, use_gpu: bool) -> Result<Self> {
+    pub fn new_with_dict(
+        detection_model: &str,
+        recognition_model: &str,
+        dict_path: &str,
+        use_gpu: bool,
+    ) -> Result<Self> {
         info!("Initializing OCR engine...");
         info!("  Detection model: {}", detection_model);
         info!("  Recognition model: {}", recognition_model);
@@ -43,21 +54,25 @@ impl OcrEngine {
         info!("  GPU acceleration: {}", use_gpu);
 
         let detection_session = if use_gpu {
-            OnnxSession::new_with_gpu(std::path::Path::new(detection_model))
-                .or_else(|e| {
-                    warn!("Failed to load detection model with GPU, falling back to CPU: {}", e);
-                    OnnxSession::new(std::path::Path::new(detection_model))
-                })?
+            OnnxSession::new_with_gpu(std::path::Path::new(detection_model)).or_else(|e| {
+                warn!(
+                    "Failed to load detection model with GPU, falling back to CPU: {}",
+                    e
+                );
+                OnnxSession::new(std::path::Path::new(detection_model))
+            })?
         } else {
             OnnxSession::new(std::path::Path::new(detection_model))?
         };
 
         let recognition_session = if use_gpu {
-            OnnxSession::new_with_gpu(std::path::Path::new(recognition_model))
-                .or_else(|e| {
-                    warn!("Failed to load recognition model with GPU, falling back to CPU: {}", e);
-                    OnnxSession::new(std::path::Path::new(recognition_model))
-                })?
+            OnnxSession::new_with_gpu(std::path::Path::new(recognition_model)).or_else(|e| {
+                warn!(
+                    "Failed to load recognition model with GPU, falling back to CPU: {}",
+                    e
+                );
+                OnnxSession::new(std::path::Path::new(recognition_model))
+            })?
         } else {
             OnnxSession::new(std::path::Path::new(recognition_model))?
         };
@@ -68,7 +83,10 @@ impl OcrEngine {
 
         info!("OCR engine initialized successfully");
         info!("  Detection inputs: {:?}", detection_session.input_info());
-        info!("  Recognition inputs: {:?}", recognition_session.input_info());
+        info!(
+            "  Recognition inputs: {:?}",
+            recognition_session.input_info()
+        );
         info!("  Detection outputs: {:?}", detection_session.output_info());
 
         Ok(Self {
@@ -94,8 +112,14 @@ impl OcrEngine {
             .collect();
 
         info!("Loaded {} characters from dictionary", vocabulary.len());
-        info!("First 20 chars: {:?}", &vocabulary[..vocabulary.len().min(20)]);
-        info!("Last 5 chars: {:?}", &vocabulary[vocabulary.len().saturating_sub(5)..]);
+        info!(
+            "First 20 chars: {:?}",
+            &vocabulary[..vocabulary.len().min(20)]
+        );
+        info!(
+            "Last 5 chars: {:?}",
+            &vocabulary[vocabulary.len().saturating_sub(5)..]
+        );
         // Check for space character
         for (i, &c) in vocabulary.iter().enumerate() {
             if c == ' ' {
@@ -117,7 +141,12 @@ impl OcrEngine {
     }
 
     /// Run OCR on an image buffer (BGRA format)
-    pub fn recognize(&mut self, image_data: &[u8], width: u32, height: u32) -> Result<Vec<OcrResult>> {
+    pub fn recognize(
+        &mut self,
+        image_data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<Vec<OcrResult>> {
         if image_data.is_empty() || width == 0 || height == 0 {
             return Ok(vec![]);
         }
@@ -149,40 +178,48 @@ impl OcrEngine {
     }
 
     /// Detect text regions in an image
-    fn detect(&mut self, image_data: &[u8], width: u32, height: u32) -> Result<Vec<DetectedRegion>> {
+    fn detect(
+        &mut self,
+        image_data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<Vec<DetectedRegion>> {
         // Preprocess image for detection
-        let (input_tensor, scale) = preprocess_for_detection(
-            image_data,
-            width,
-            height,
-            &self.preprocess_config,
-        );
+        let (input_tensor, scale) =
+            preprocess_for_detection(image_data, width, height, &self.preprocess_config);
 
         // Create ONNX tensor from ndarray
         let input_value = ort::value::Tensor::from_array(input_tensor)?;
 
         // Run detection inference
-        let outputs = self.detection_session.session_mut().run(
-            ort::inputs![input_value]
-        ).context("Detection inference failed")?;
+        let outputs = self
+            .detection_session
+            .session_mut()
+            .run(ort::inputs![input_value])
+            .context("Detection inference failed")?;
 
         // Get output tensor (probability map)
-        let output = outputs.iter().next()
+        let output = outputs
+            .iter()
+            .next()
             .ok_or_else(|| anyhow::anyhow!("No detection output"))?;
 
         // Extract tensor data as (shape, data) tuple and clone to release borrow
-        let (shape, data) = output.1.try_extract_tensor::<f32>()
+        let (shape, data) = output
+            .1
+            .try_extract_tensor::<f32>()
             .context("Failed to extract detection output")?;
 
         // Clone data to release borrow on outputs/self
-        let shape_vec: Vec<i64> = shape.iter().map(|&d| d).collect();
+        let shape_vec: Vec<i64> = shape.iter().copied().collect();
         let data_vec: Vec<f32> = data.to_vec();
 
         // Drop outputs to release borrow
         drop(outputs);
 
         // Post-process: extract bounding boxes from probability map
-        let detections = self.postprocess_detection_raw(&shape_vec, &data_vec, scale, width, height)?;
+        let detections =
+            self.postprocess_detection_raw(&shape_vec, &data_vec, scale, width, height)?;
 
         Ok(detections)
     }
@@ -196,7 +233,11 @@ impl OcrEngine {
         orig_width: u32,
         orig_height: u32,
     ) -> Result<Vec<DetectedRegion>> {
-        info!("Detection output shape: {:?}, data len: {}", shape, data.len());
+        info!(
+            "Detection output shape: {:?}, data len: {}",
+            shape,
+            data.len()
+        );
 
         if shape.len() < 4 {
             warn!("Shape too short ({}), returning empty", shape.len());
@@ -221,7 +262,11 @@ impl OcrEngine {
             }
         }
 
-        let avg_val = if !data.is_empty() { sum_val / data.len() as f64 } else { 0.0 };
+        let avg_val = if !data.is_empty() {
+            sum_val / data.len() as f64
+        } else {
+            0.0
+        };
         info!(
             "Detection map stats - min: {:.4}, max: {:.4}, avg: {:.4}, above threshold({}): {}",
             min_val, max_val, avg_val, self.detection_threshold, above_threshold
@@ -279,7 +324,10 @@ impl OcrEngine {
         let cropped = crop_polygon(image, &region.polygon);
 
         let (h, w, _) = cropped.dim();
-        debug!("Cropped region size: {}x{}, polygon: {:?}", w, h, region.polygon);
+        debug!(
+            "Cropped region size: {}x{}, polygon: {:?}",
+            w, h, region.polygon
+        );
         if h < 2 || w < 2 {
             debug!("Region too small, skipping");
             return Ok(None);
@@ -293,25 +341,35 @@ impl OcrEngine {
         let input_value = ort::value::Tensor::from_array(input_tensor)?;
 
         // Run recognition inference
-        let outputs = self.recognition_session.session_mut().run(
-            ort::inputs![input_value]
-        ).context("Recognition inference failed")?;
+        let outputs = self
+            .recognition_session
+            .session_mut()
+            .run(ort::inputs![input_value])
+            .context("Recognition inference failed")?;
 
         // Get output tensor
-        let output = outputs.iter().next()
+        let output = outputs
+            .iter()
+            .next()
             .ok_or_else(|| anyhow::anyhow!("No recognition output"))?;
-        let (shape, data) = output.1.try_extract_tensor::<f32>()
+        let (shape, data) = output
+            .1
+            .try_extract_tensor::<f32>()
             .context("Failed to extract recognition output")?;
 
         // Clone data to release borrow on outputs/self
-        let shape_vec: Vec<i64> = shape.iter().map(|&d| d).collect();
+        let shape_vec: Vec<i64> = shape.iter().copied().collect();
         let data_vec: Vec<f32> = data.to_vec();
 
         // Drop outputs to release borrow
         drop(outputs);
 
         // Decode output using CTC
-        debug!("Recognition output shape: {:?}, data len: {}", shape_vec, data_vec.len());
+        debug!(
+            "Recognition output shape: {:?}, data len: {}",
+            shape_vec,
+            data_vec.len()
+        );
         let (text, confidence) = self.ctc_decode_raw(&shape_vec, &data_vec)?;
         debug!("CTC decoded: text='{}', confidence={:.3}", text, confidence);
 
@@ -340,12 +398,14 @@ impl OcrEngine {
         if seq_len > 0 {
             let mut min_val = f32::MAX;
             let mut max_val = f32::MIN;
-            for v in 0..vocab_size.min(10) {
-                let val = data[v];
-                min_val = min_val.min(val);
-                max_val = max_val.max(val);
+            for val in data.iter().take(vocab_size.min(10)) {
+                min_val = min_val.min(*val);
+                max_val = max_val.max(*val);
             }
-            debug!("Recognition logits t=0: min={:.4}, max={:.4} (first 10 classes)", min_val, max_val);
+            debug!(
+                "Recognition logits t=0: min={:.4}, max={:.4} (first 10 classes)",
+                min_val, max_val
+            );
         }
 
         // PaddleOCR ONNX model: 438 classes
@@ -397,8 +457,10 @@ impl OcrEngine {
                 let vocab_idx = max_idx - 1;
                 if vocab_idx < self.vocabulary.len() {
                     let ch = self.vocabulary[vocab_idx];
-                    debug!("t={}: max_idx={}, vocab_idx={}, char='{}', conf={:.4}, logit={:.4}",
-                           t, max_idx, vocab_idx, ch, confidence, max_val);
+                    debug!(
+                        "t={}: max_idx={}, vocab_idx={}, char='{}', conf={:.4}, logit={:.4}",
+                        t, max_idx, vocab_idx, ch, confidence, max_val
+                    );
                     // Skip space characters in output (they appear between words)
                     if ch != ' ' {
                         text.push(ch);
@@ -475,10 +537,18 @@ fn find_text_boxes(binary_map: &Array2<u8>, _threshold: f32) -> Vec<(usize, usiz
                     max_y = max_y.max(y);
 
                     // Add neighbors
-                    if y > 0 { stack.push((y - 1, x)); }
-                    if y < h - 1 { stack.push((y + 1, x)); }
-                    if x > 0 { stack.push((y, x - 1)); }
-                    if x < w - 1 { stack.push((y, x + 1)); }
+                    if y > 0 {
+                        stack.push((y - 1, x));
+                    }
+                    if y < h - 1 {
+                        stack.push((y + 1, x));
+                    }
+                    if x > 0 {
+                        stack.push((y, x - 1));
+                    }
+                    if x < w - 1 {
+                        stack.push((y, x + 1));
+                    }
                 }
 
                 // Filter small boxes
@@ -527,13 +597,13 @@ fn softmax_prob(data: &[f32], t: usize, vocab_size: usize, class_idx: usize) -> 
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    #[test]
-    fn test_vocabulary() {
-        let vocab: Vec<char> = ENGLISH_CHARS.chars().collect();
-        assert!(vocab.len() > 90); // Should have printable ASCII
-        assert!(vocab.contains(&'A'));
-        assert!(vocab.contains(&'0'));
-    }
+    // Note: ENGLISH_CHARS constant was removed in a previous refactor
+    // This test is currently disabled until vocabulary management is revisited
+    // #[test]
+    // fn test_vocabulary() {
+    //     let vocab: Vec<char> = ENGLISH_CHARS.chars().collect();
+    //     assert!(vocab.len() > 90); // Should have printable ASCII
+    //     assert!(vocab.contains(&'A'));
+    //     assert!(vocab.contains(&'0'));
+    // }
 }

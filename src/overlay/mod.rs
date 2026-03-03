@@ -1,15 +1,19 @@
+#![allow(dead_code)]
 //! Overlay Presentation Layer
 //!
 //! Displays tips and alerts using egui_overlay with click passthrough.
 //! The overlay is a separate window that doesn't interact with the game.
 
 pub mod widgets;
+pub mod zone_selection;
 
 use anyhow::Result;
-use crossbeam_channel::{Receiver, Sender, unbounded};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use egui::{Align2, Color32, FontId, RichText, Rounding, Vec2};
-use egui_overlay::{EguiOverlay, egui_window_glfw_passthrough::GlfwBackend, egui_render_three_d::ThreeDBackend};
 use egui_overlay::egui_window_glfw_passthrough::glfw;
+use egui_overlay::{
+    egui_render_three_d::ThreeDBackend, egui_window_glfw_passthrough::GlfwBackend, EguiOverlay,
+};
 use parking_lot::RwLock;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -17,6 +21,107 @@ use tracing::info;
 
 use crate::analysis::Tip;
 use crate::overlay::widgets::{PriorityStyles, TipStyle};
+use crate::overlay::zone_selection::{render_zone_selection, ZoneSelectionOverlayState};
+
+/// Mode for overlay interaction
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OverlayMode {
+    /// Normal display mode (tips only, click-through)
+    #[default]
+    Normal,
+    /// Zone selection mode (interactive, captures mouse)
+    ZoneSelection,
+    /// Visual anchor capture mode (capture a region as template)
+    VisualAnchorCapture,
+    /// Text anchor capture mode (capture a region for OCR text matching)
+    TextAnchorCapture,
+    /// Full screen capture mode (capture entire screen as template)
+    FullScreenCapture,
+}
+
+/// Type of selection being made
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SelectionType {
+    /// Zone OCR selection (default)
+    #[default]
+    Zone,
+    /// Visual anchor for screen recognition
+    VisualAnchor,
+    /// Text anchor for screen recognition
+    TextAnchor,
+    /// Full screen template (no region selection needed)
+    FullScreen,
+}
+
+/// Commands sent from dashboard to overlay for zone/screen selection
+#[derive(Debug, Clone)]
+pub enum ZoneCommand {
+    /// Enter zone selection mode with existing zones to display
+    EnterSelectionMode {
+        existing_zones: Vec<(String, (f32, f32, f32, f32))>,
+        /// Capture frame dimensions (width, height) for proper coordinate normalization
+        capture_size: Option<(u32, u32)>,
+    },
+    /// Exit zone selection mode
+    ExitSelectionMode,
+    /// Update zone display (when zones change in dashboard)
+    UpdateZones {
+        zones: Vec<(String, (f32, f32, f32, f32))>,
+    },
+    /// Enter visual anchor capture mode
+    EnterVisualAnchorMode {
+        /// Screen ID to add the anchor to
+        screen_id: String,
+        /// Existing anchors to display
+        existing_anchors: Vec<(String, (f32, f32, f32, f32))>,
+        /// Capture frame dimensions
+        capture_size: Option<(u32, u32)>,
+    },
+    /// Enter text anchor capture mode
+    EnterTextAnchorMode {
+        /// Screen ID to add the anchor to
+        screen_id: String,
+        /// Existing anchors to display
+        existing_anchors: Vec<(String, (f32, f32, f32, f32))>,
+        /// Capture frame dimensions
+        capture_size: Option<(u32, u32)>,
+    },
+    /// Enter full screen capture mode (captures entire screen as template)
+    EnterFullScreenCaptureMode {
+        /// Screen ID to set the template for
+        screen_id: String,
+        /// Capture frame dimensions
+        capture_size: Option<(u32, u32)>,
+    },
+    /// Update current screen recognition status display
+    UpdateScreenStatus {
+        /// Currently detected screen name (None if no screen detected)
+        screen_name: Option<String>,
+        /// Confidence level (0.0 - 1.0)
+        confidence: f32,
+    },
+}
+
+/// Results sent from overlay back to dashboard
+#[derive(Debug, Clone)]
+pub enum ZoneSelectionResult {
+    /// User completed a zone selection
+    Completed { bounds: (f32, f32, f32, f32) },
+    /// User cancelled selection
+    Cancelled,
+    /// Visual anchor region captured
+    VisualAnchorCaptured {
+        screen_id: String,
+        bounds: (f32, f32, f32, f32),
+    },
+    /// Text anchor region captured
+    TextAnchorCaptured {
+        screen_id: String,
+        bounds: (f32, f32, f32, f32),
+    },
+    /// Full screen template captured
+    FullScreenCaptured { screen_id: String },
+}
 
 /// Overlay configuration
 #[derive(Debug, Clone, PartialEq)]
@@ -95,7 +200,8 @@ struct DisplayTip {
 impl DisplayTip {
     fn new(tip: Tip, default_duration_ms: u64) -> Self {
         let shown_at = Instant::now();
-        let expires_at = tip.duration_ms
+        let expires_at = tip
+            .duration_ms
             .or(Some(default_duration_ms))
             .map(|ms| shown_at + Duration::from_millis(ms));
         Self {
@@ -119,6 +225,16 @@ pub struct OverlayState {
     tips: Vec<DisplayTip>,
     config: OverlayConfig,
     styles: PriorityStyles,
+    /// Current overlay mode
+    mode: OverlayMode,
+    /// Zone selection state
+    zone_selection: ZoneSelectionOverlayState,
+    /// Screen ID being captured for (for anchor/full screen capture)
+    capture_screen_id: Option<String>,
+    /// Current screen recognition status
+    current_screen_name: Option<String>,
+    /// Current screen recognition confidence
+    current_screen_confidence: f32,
 }
 
 impl OverlayState {
@@ -127,6 +243,11 @@ impl OverlayState {
             tips: Vec::new(),
             config,
             styles: PriorityStyles::default(),
+            mode: OverlayMode::Normal,
+            zone_selection: ZoneSelectionOverlayState::default(),
+            capture_screen_id: None,
+            current_screen_name: None,
+            current_screen_confidence: 0.0,
         }
     }
 }
@@ -184,16 +305,28 @@ pub struct OverlayManager {
     state: Arc<RwLock<OverlayState>>,
     tip_sender: Sender<Tip>,
     tip_receiver: Receiver<Tip>,
+    /// Channel for sending zone commands to overlay
+    zone_cmd_sender: Sender<ZoneCommand>,
+    zone_cmd_receiver: Receiver<ZoneCommand>,
+    /// Channel for receiving zone selection results from overlay
+    zone_result_sender: Sender<ZoneSelectionResult>,
+    zone_result_receiver: Receiver<ZoneSelectionResult>,
 }
 
 impl OverlayManager {
     /// Create a new overlay manager
     pub fn new(config: OverlayConfig) -> Result<Self> {
         let (tip_sender, tip_receiver) = unbounded();
+        let (zone_cmd_sender, zone_cmd_receiver) = unbounded();
+        let (zone_result_sender, zone_result_receiver) = unbounded();
         Ok(Self {
             state: Arc::new(RwLock::new(OverlayState::new(config))),
             tip_sender,
             tip_receiver,
+            zone_cmd_sender,
+            zone_cmd_receiver,
+            zone_result_sender,
+            zone_result_receiver,
         })
     }
 
@@ -242,6 +375,100 @@ impl OverlayManager {
         state.config.click_through
     }
 
+    /// Enter zone selection mode
+    ///
+    /// Sends a command to the overlay to enter zone selection mode,
+    /// displaying existing zones and allowing the user to draw a new one.
+    /// The capture_size should be provided when a capture is active to ensure
+    /// zone coordinates are properly normalized relative to the captured content.
+    pub fn enter_zone_selection_mode(
+        &self,
+        existing_zones: Vec<(String, (f32, f32, f32, f32))>,
+        capture_size: Option<(u32, u32)>,
+    ) {
+        let _ = self.zone_cmd_sender.send(ZoneCommand::EnterSelectionMode {
+            existing_zones,
+            capture_size,
+        });
+    }
+
+    /// Exit zone selection mode
+    pub fn exit_zone_selection_mode(&self) {
+        let _ = self.zone_cmd_sender.send(ZoneCommand::ExitSelectionMode);
+    }
+
+    /// Update the zones displayed on the overlay
+    pub fn update_zones(&self, zones: Vec<(String, (f32, f32, f32, f32))>) {
+        let _ = self
+            .zone_cmd_sender
+            .send(ZoneCommand::UpdateZones { zones });
+    }
+
+    /// Poll for zone selection results (non-blocking)
+    pub fn poll_zone_selection_result(&self) -> Option<ZoneSelectionResult> {
+        self.zone_result_receiver.try_recv().ok()
+    }
+
+    /// Enter visual anchor capture mode
+    ///
+    /// Allows the user to select a region that will be used as a visual template
+    /// for screen recognition.
+    pub fn enter_visual_anchor_mode(
+        &self,
+        screen_id: String,
+        existing_anchors: Vec<(String, (f32, f32, f32, f32))>,
+        capture_size: Option<(u32, u32)>,
+    ) {
+        let _ = self
+            .zone_cmd_sender
+            .send(ZoneCommand::EnterVisualAnchorMode {
+                screen_id,
+                existing_anchors,
+                capture_size,
+            });
+    }
+
+    /// Enter text anchor capture mode
+    ///
+    /// Allows the user to select a region that will be OCR'd for text matching
+    /// in screen recognition.
+    pub fn enter_text_anchor_mode(
+        &self,
+        screen_id: String,
+        existing_anchors: Vec<(String, (f32, f32, f32, f32))>,
+        capture_size: Option<(u32, u32)>,
+    ) {
+        let _ = self.zone_cmd_sender.send(ZoneCommand::EnterTextAnchorMode {
+            screen_id,
+            existing_anchors,
+            capture_size,
+        });
+    }
+
+    /// Enter full screen capture mode
+    ///
+    /// Captures the entire screen as a template for screen recognition.
+    pub fn enter_full_screen_capture_mode(
+        &self,
+        screen_id: String,
+        capture_size: Option<(u32, u32)>,
+    ) {
+        let _ = self
+            .zone_cmd_sender
+            .send(ZoneCommand::EnterFullScreenCaptureMode {
+                screen_id,
+                capture_size,
+            });
+    }
+
+    /// Update the screen recognition status displayed on the overlay
+    pub fn update_screen_status(&self, screen_name: Option<String>, confidence: f32) {
+        let _ = self.zone_cmd_sender.send(ZoneCommand::UpdateScreenStatus {
+            screen_name,
+            confidence,
+        });
+    }
+
     /// Run the overlay event loop (blocking)
     /// This should be called from the main thread
     pub fn run(&self) -> Result<()> {
@@ -249,16 +476,21 @@ impl OverlayManager {
 
         let state = self.state.clone();
         let tip_receiver = self.tip_receiver.clone();
+        let zone_cmd_receiver = self.zone_cmd_receiver.clone();
+        let zone_result_sender = self.zone_result_sender.clone();
         let config = self.state.read().config.clone();
 
         // Create the overlay app
         let app = OverlayApp {
             state,
             tip_receiver,
+            zone_cmd_receiver,
+            zone_result_sender,
             positioned: false,
             monitor_bounds: None,
             current_click_through: config.click_through,
             current_monitor_index: config.monitor_index,
+            capture_size: None,
         };
 
         // Run egui_overlay
@@ -272,6 +504,10 @@ impl OverlayManager {
 struct OverlayApp {
     state: Arc<RwLock<OverlayState>>,
     tip_receiver: Receiver<Tip>,
+    /// Receiver for zone selection commands
+    zone_cmd_receiver: Receiver<ZoneCommand>,
+    /// Sender for zone selection results
+    zone_result_sender: Sender<ZoneSelectionResult>,
     /// Whether we've positioned the window on the target monitor
     positioned: bool,
     /// Cached monitor bounds for the selected monitor (x, y, width, height)
@@ -280,6 +516,8 @@ struct OverlayApp {
     current_click_through: bool,
     /// Current monitor index (tracked for runtime changes)
     current_monitor_index: Option<usize>,
+    /// Capture frame dimensions for zone coordinate normalization
+    capture_size: Option<(u32, u32)>,
 }
 
 impl EguiOverlay for OverlayApp {
@@ -289,14 +527,116 @@ impl EguiOverlay for OverlayApp {
         _default_gfx_backend: &mut ThreeDBackend,
         glfw_backend: &mut GlfwBackend,
     ) {
-        // Check if click-through setting changed at runtime
-        let desired_click_through = self.state.read().config.click_through;
+        // Process zone commands
+        while let Ok(cmd) = self.zone_cmd_receiver.try_recv() {
+            let mut state = self.state.write();
+            match cmd {
+                ZoneCommand::EnterSelectionMode {
+                    existing_zones,
+                    capture_size,
+                } => {
+                    state.mode = OverlayMode::ZoneSelection;
+                    state.zone_selection.existing_zones = existing_zones;
+                    state.zone_selection.start_point = None;
+                    state.zone_selection.current_point = None;
+                    state.zone_selection.completed_selection = None;
+                    state.capture_screen_id = None;
+                    // Store capture size for coordinate normalization
+                    drop(state); // Release lock before modifying self
+                    self.capture_size = capture_size;
+                    info!(
+                        "Entered zone selection mode with capture_size: {:?}",
+                        capture_size
+                    );
+                }
+                ZoneCommand::ExitSelectionMode => {
+                    state.mode = OverlayMode::Normal;
+                    state.zone_selection = ZoneSelectionOverlayState::default();
+                    state.capture_screen_id = None;
+                    drop(state);
+                    self.capture_size = None;
+                    info!("Exited selection mode");
+                }
+                ZoneCommand::UpdateZones { zones } => {
+                    state.zone_selection.existing_zones = zones;
+                }
+                ZoneCommand::EnterVisualAnchorMode {
+                    screen_id,
+                    existing_anchors,
+                    capture_size,
+                } => {
+                    state.mode = OverlayMode::VisualAnchorCapture;
+                    state.zone_selection.existing_zones = existing_anchors;
+                    state.zone_selection.start_point = None;
+                    state.zone_selection.current_point = None;
+                    state.zone_selection.completed_selection = None;
+                    state.capture_screen_id = Some(screen_id.clone());
+                    drop(state);
+                    self.capture_size = capture_size;
+                    info!(
+                        "Entered visual anchor capture mode for screen: {}",
+                        screen_id
+                    );
+                }
+                ZoneCommand::EnterTextAnchorMode {
+                    screen_id,
+                    existing_anchors,
+                    capture_size,
+                } => {
+                    state.mode = OverlayMode::TextAnchorCapture;
+                    state.zone_selection.existing_zones = existing_anchors;
+                    state.zone_selection.start_point = None;
+                    state.zone_selection.current_point = None;
+                    state.zone_selection.completed_selection = None;
+                    state.capture_screen_id = Some(screen_id.clone());
+                    drop(state);
+                    self.capture_size = capture_size;
+                    info!("Entered text anchor capture mode for screen: {}", screen_id);
+                }
+                ZoneCommand::EnterFullScreenCaptureMode {
+                    screen_id,
+                    capture_size,
+                } => {
+                    state.mode = OverlayMode::FullScreenCapture;
+                    state.zone_selection = ZoneSelectionOverlayState::default();
+                    state.capture_screen_id = Some(screen_id.clone());
+                    drop(state);
+                    self.capture_size = capture_size;
+                    info!("Entered full screen capture mode for screen: {}", screen_id);
+                }
+                ZoneCommand::UpdateScreenStatus {
+                    screen_name,
+                    confidence,
+                } => {
+                    state.current_screen_name = screen_name;
+                    state.current_screen_confidence = confidence;
+                }
+            }
+        }
+
+        // Get current mode to determine click-through behavior
+        let current_mode = self.state.read().mode;
+
+        // In selection/capture modes, disable click-through to capture mouse
+        let desired_click_through = match current_mode {
+            OverlayMode::Normal => self.state.read().config.click_through,
+            // All interactive modes need mouse capture
+            OverlayMode::ZoneSelection
+            | OverlayMode::VisualAnchorCapture
+            | OverlayMode::TextAnchorCapture
+            | OverlayMode::FullScreenCapture => false,
+        };
+
         if desired_click_through != self.current_click_through {
             glfw_backend.set_passthrough(desired_click_through);
             self.current_click_through = desired_click_through;
             info!(
                 "Click-through {}",
-                if desired_click_through { "enabled" } else { "disabled" }
+                if desired_click_through {
+                    "enabled"
+                } else {
+                    "disabled"
+                }
             );
         }
 
@@ -311,7 +651,11 @@ impl EguiOverlay for OverlayApp {
                 glfw_backend.set_passthrough(self.current_click_through);
                 info!(
                     "Initial click-through: {}",
-                    if self.current_click_through { "enabled" } else { "disabled" }
+                    if self.current_click_through {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    }
                 );
             }
 
@@ -320,8 +664,10 @@ impl EguiOverlay for OverlayApp {
 
             if let Some(target_index) = desired_monitor_index {
                 // First, collect monitor info from GLFW
-                let monitor_data: Option<(i32, i32, i32, i32, String)> =
-                    glfw_backend.window.glfw.with_connected_monitors(|_, monitors| {
+                let monitor_data: Option<(i32, i32, i32, i32, String)> = glfw_backend
+                    .window
+                    .glfw
+                    .with_connected_monitors(|_, monitors| {
                         monitors.get(target_index).map(|monitor| {
                             let (x, y, w, h) = monitor.get_workarea();
                             let name = monitor.get_name().unwrap_or_else(|| "Unknown".to_string());
@@ -352,6 +698,172 @@ impl EguiOverlay for OverlayApp {
                         target_index, count
                     );
                 }
+            }
+        }
+
+        // Handle selection/capture modes
+        match current_mode {
+            OverlayMode::ZoneSelection => {
+                // Use capture frame dimensions for normalization if available,
+                // otherwise fall back to monitor bounds
+                let screen_size = self
+                    .capture_size
+                    .map(|(w, h)| (w as f32, h as f32))
+                    .or_else(|| self.monitor_bounds.map(|(_, _, w, h)| (w as f32, h as f32)))
+                    .unwrap_or((1920.0, 1080.0));
+
+                let result = {
+                    let mut state = self.state.write();
+                    render_zone_selection(egui_ctx, &mut state.zone_selection, screen_size)
+                };
+
+                // Handle zone selection result
+                if let Some(zone_result) = result {
+                    let _ = self.zone_result_sender.send(zone_result.clone());
+
+                    // If completed or cancelled, exit zone selection mode
+                    match zone_result {
+                        ZoneSelectionResult::Completed { .. } | ZoneSelectionResult::Cancelled => {
+                            let mut state = self.state.write();
+                            state.mode = OverlayMode::Normal;
+                            state.zone_selection = ZoneSelectionOverlayState::default();
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Request continuous repaints in selection mode
+                egui_ctx.request_repaint_after(Duration::from_millis(16));
+                return;
+            }
+            OverlayMode::VisualAnchorCapture => {
+                let screen_size = self
+                    .capture_size
+                    .map(|(w, h)| (w as f32, h as f32))
+                    .or_else(|| self.monitor_bounds.map(|(_, _, w, h)| (w as f32, h as f32)))
+                    .unwrap_or((1920.0, 1080.0));
+
+                let (result, screen_id) = {
+                    let mut state = self.state.write();
+                    let screen_id = state.capture_screen_id.clone();
+                    let result = render_anchor_selection(
+                        egui_ctx,
+                        &mut state.zone_selection,
+                        screen_size,
+                        "visual anchor",
+                        Color32::from_rgb(255, 100, 100), // Red for visual
+                    );
+                    (result, screen_id)
+                };
+
+                if let Some(zone_result) = result {
+                    // Convert to appropriate result type
+                    let final_result = match zone_result {
+                        ZoneSelectionResult::Completed { bounds } => {
+                            if let Some(sid) = screen_id {
+                                ZoneSelectionResult::VisualAnchorCaptured {
+                                    screen_id: sid,
+                                    bounds,
+                                }
+                            } else {
+                                ZoneSelectionResult::Cancelled
+                            }
+                        }
+                        other => other,
+                    };
+
+                    let _ = self.zone_result_sender.send(final_result.clone());
+
+                    // Exit capture mode
+                    let mut state = self.state.write();
+                    state.mode = OverlayMode::Normal;
+                    state.zone_selection = ZoneSelectionOverlayState::default();
+                    state.capture_screen_id = None;
+                }
+
+                egui_ctx.request_repaint_after(Duration::from_millis(16));
+                return;
+            }
+            OverlayMode::TextAnchorCapture => {
+                let screen_size = self
+                    .capture_size
+                    .map(|(w, h)| (w as f32, h as f32))
+                    .or_else(|| self.monitor_bounds.map(|(_, _, w, h)| (w as f32, h as f32)))
+                    .unwrap_or((1920.0, 1080.0));
+
+                let (result, screen_id) = {
+                    let mut state = self.state.write();
+                    let screen_id = state.capture_screen_id.clone();
+                    let result = render_anchor_selection(
+                        egui_ctx,
+                        &mut state.zone_selection,
+                        screen_size,
+                        "text anchor",
+                        Color32::from_rgb(100, 100, 255), // Blue for text
+                    );
+                    (result, screen_id)
+                };
+
+                if let Some(zone_result) = result {
+                    let final_result = match zone_result {
+                        ZoneSelectionResult::Completed { bounds } => {
+                            if let Some(sid) = screen_id {
+                                ZoneSelectionResult::TextAnchorCaptured {
+                                    screen_id: sid,
+                                    bounds,
+                                }
+                            } else {
+                                ZoneSelectionResult::Cancelled
+                            }
+                        }
+                        other => other,
+                    };
+
+                    let _ = self.zone_result_sender.send(final_result.clone());
+
+                    let mut state = self.state.write();
+                    state.mode = OverlayMode::Normal;
+                    state.zone_selection = ZoneSelectionOverlayState::default();
+                    state.capture_screen_id = None;
+                }
+
+                egui_ctx.request_repaint_after(Duration::from_millis(16));
+                return;
+            }
+            OverlayMode::FullScreenCapture => {
+                // Full screen capture - just show a prompt and capture on click/enter
+                let screen_id = self.state.read().capture_screen_id.clone();
+
+                render_full_screen_capture_ui(egui_ctx);
+
+                // Check for enter key or click to confirm
+                let confirmed =
+                    egui_ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.pointer.any_click());
+                let cancelled = egui_ctx.input(|i| i.key_pressed(egui::Key::Escape));
+
+                if confirmed {
+                    if let Some(sid) = screen_id {
+                        let _ = self
+                            .zone_result_sender
+                            .send(ZoneSelectionResult::FullScreenCaptured { screen_id: sid });
+                    }
+
+                    let mut state = self.state.write();
+                    state.mode = OverlayMode::Normal;
+                    state.capture_screen_id = None;
+                } else if cancelled {
+                    let _ = self.zone_result_sender.send(ZoneSelectionResult::Cancelled);
+
+                    let mut state = self.state.write();
+                    state.mode = OverlayMode::Normal;
+                    state.capture_screen_id = None;
+                }
+
+                egui_ctx.request_repaint_after(Duration::from_millis(16));
+                return;
+            }
+            OverlayMode::Normal => {
+                // Continue to normal rendering below
             }
         }
 
@@ -391,10 +903,7 @@ impl EguiOverlay for OverlayApp {
             OverlayAnchor::BottomRight => Align2::RIGHT_BOTTOM,
         };
 
-        let offset = Vec2::new(
-            state.config.offset.0 as f32,
-            state.config.offset.1 as f32,
-        );
+        let offset = Vec2::new(state.config.offset.0 as f32, state.config.offset.1 as f32);
 
         let max_width = state.config.max_width;
 
@@ -408,7 +917,8 @@ impl EguiOverlay for OverlayApp {
                         ui.set_max_width(max_width);
 
                         for display_tip in state.tips.iter() {
-                            let style = get_style_for_priority(display_tip.tip.priority, &state.styles);
+                            let style =
+                                get_style_for_priority(display_tip.tip.priority, &state.styles);
                             let opacity = calculate_opacity(display_tip, state.config.opacity);
 
                             draw_tip(ui, display_tip, style, opacity);
@@ -433,25 +943,13 @@ fn get_style_for_priority(priority: u32, styles: &PriorityStyles) -> &TipStyle {
 }
 
 /// Calculate opacity with fade-in/fade-out effects
-fn calculate_opacity(tip: &DisplayTip, base_opacity: f32) -> f32 {
-    let age = tip.age_secs();
-
-    // Fade in during first 0.3 seconds
-    let fade_in = (age / 0.3).min(1.0);
-
-    // Fade out during last 0.5 seconds before expiry
-    let fade_out = if let Some(expires_at) = tip.expires_at {
-        let remaining = expires_at.saturating_duration_since(Instant::now()).as_secs_f32();
-        if remaining < 0.5 {
-            remaining / 0.5
-        } else {
-            1.0
-        }
+fn calculate_opacity(_tip: &DisplayTip, base_opacity: f32) -> f32 {
+    // Simplified calculation for debugging to ensure it stays visible
+    if base_opacity > 0.8 {
+        base_opacity
     } else {
-        1.0
-    };
-
-    base_opacity * fade_in * fade_out
+        0.8
+    }
 }
 
 /// Draw a single tip
@@ -480,5 +978,299 @@ fn draw_tip(ui: &mut egui::Ui, display_tip: &DisplayTip, style: &TipStyle, opaci
                     .color(text_color)
                     .font(FontId::proportional(14.0)),
             );
+        });
+}
+
+/// Render anchor selection UI (similar to zone selection but with different colors/instructions)
+fn render_anchor_selection(
+    ctx: &egui::Context,
+    state: &mut ZoneSelectionOverlayState,
+    screen_size: (f32, f32),
+    anchor_type: &str,
+    highlight_color: Color32,
+) -> Option<ZoneSelectionResult> {
+    use egui::{Key, Pos2, Rect, Stroke};
+
+    let mut result: Option<ZoneSelectionResult> = None;
+
+    // Check for ESC key to cancel
+    if ctx.input(|i| i.key_pressed(Key::Escape)) {
+        return Some(ZoneSelectionResult::Cancelled);
+    }
+
+    // Full-screen area for selection
+    egui::Area::new(egui::Id::new("anchor_selection_overlay"))
+        .fixed_pos(Pos2::ZERO)
+        .show(ctx, |ui| {
+            let screen_rect =
+                Rect::from_min_size(Pos2::ZERO, egui::vec2(screen_size.0, screen_size.1));
+
+            // Allocate the full screen for interaction
+            let response = ui.allocate_rect(screen_rect, egui::Sense::click_and_drag());
+
+            let painter = ui.painter();
+
+            // Draw semi-transparent dark overlay
+            painter.rect_filled(
+                screen_rect,
+                Rounding::ZERO,
+                Color32::from_rgba_unmultiplied(0, 0, 0, 120),
+            );
+
+            // Draw existing anchors
+            for (name, bounds) in &state.existing_zones {
+                let anchor_rect = zone_selection::normalized_to_screen(*bounds, screen_size);
+
+                // Draw filled background (semi-transparent)
+                painter.rect_filled(
+                    anchor_rect,
+                    Rounding::same(2.0),
+                    Color32::from_rgba_unmultiplied(
+                        highlight_color.r(),
+                        highlight_color.g(),
+                        highlight_color.b(),
+                        40,
+                    ),
+                );
+
+                // Draw border
+                painter.rect_stroke(
+                    anchor_rect,
+                    Rounding::same(2.0),
+                    Stroke::new(2.0, highlight_color),
+                );
+
+                // Draw anchor name label
+                let label_pos = anchor_rect.left_top() + egui::vec2(4.0, -18.0);
+                painter.text(
+                    label_pos,
+                    egui::Align2::LEFT_TOP,
+                    name,
+                    FontId::proportional(14.0),
+                    highlight_color,
+                );
+            }
+
+            // Handle mouse interaction
+            let pointer_pos = response.interact_pointer_pos();
+
+            if response.drag_started() {
+                if let Some(pos) = pointer_pos {
+                    state.start_point = Some(pos);
+                    state.current_point = Some(pos);
+                }
+            }
+
+            if response.dragged() {
+                if let Some(pos) = pointer_pos {
+                    state.current_point = Some(pos);
+                }
+            }
+
+            if response.drag_stopped() {
+                if let (Some(start), Some(end)) = (state.start_point, state.current_point) {
+                    let bounds = zone_selection::screen_to_normalized(start, end, screen_size);
+
+                    // Only accept if the region has a minimum size
+                    let width_px = bounds.2 * screen_size.0;
+                    let height_px = bounds.3 * screen_size.1;
+
+                    if width_px >= 10.0 && height_px >= 10.0 {
+                        result = Some(ZoneSelectionResult::Completed { bounds });
+                    }
+                }
+
+                state.start_point = None;
+                state.current_point = None;
+            }
+
+            // Draw current selection rectangle
+            if let (Some(start), Some(current)) = (state.start_point, state.current_point) {
+                let selection_rect = Rect::from_two_pos(start, current);
+
+                painter.rect_filled(
+                    selection_rect,
+                    Rounding::same(2.0),
+                    Color32::from_rgba_unmultiplied(
+                        highlight_color.r(),
+                        highlight_color.g(),
+                        highlight_color.b(),
+                        60,
+                    ),
+                );
+                painter.rect_stroke(
+                    selection_rect,
+                    Rounding::same(2.0),
+                    Stroke::new(2.0, highlight_color),
+                );
+
+                // Show size info
+                let width = selection_rect.width().abs();
+                let height = selection_rect.height().abs();
+                let size_text = format!("{:.0} x {:.0}", width, height);
+
+                painter.text(
+                    selection_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    &size_text,
+                    FontId::proportional(16.0),
+                    Color32::WHITE,
+                );
+            }
+
+            // Draw instructions at the top
+            let instructions = format!(
+                "Click and drag to select a {} region. Press ESC to cancel.",
+                anchor_type
+            );
+            let instruction_pos = Pos2::new(screen_size.0 / 2.0, 30.0);
+
+            let text_galley = painter.layout_no_wrap(
+                instructions.clone(),
+                FontId::proportional(16.0),
+                Color32::WHITE,
+            );
+            let text_rect = Rect::from_center_size(
+                instruction_pos,
+                text_galley.size() + egui::vec2(20.0, 10.0),
+            );
+            painter.rect_filled(
+                text_rect,
+                Rounding::same(4.0),
+                Color32::from_rgba_unmultiplied(0, 0, 0, 200),
+            );
+
+            painter.text(
+                instruction_pos,
+                egui::Align2::CENTER_CENTER,
+                &instructions,
+                FontId::proportional(16.0),
+                Color32::WHITE,
+            );
+        });
+
+    result
+}
+
+/// Render full screen capture confirmation UI
+fn render_full_screen_capture_ui(ctx: &egui::Context) {
+    use egui::{Pos2, Rect};
+
+    let screen_rect = ctx.screen_rect();
+
+    egui::Area::new(egui::Id::new("full_screen_capture_overlay"))
+        .fixed_pos(Pos2::ZERO)
+        .show(ctx, |ui| {
+            let painter = ui.painter();
+
+            // Draw semi-transparent overlay
+            painter.rect_filled(
+                screen_rect,
+                Rounding::ZERO,
+                Color32::from_rgba_unmultiplied(0, 0, 0, 100),
+            );
+
+            // Draw border around entire screen to show capture area
+            painter.rect_stroke(
+                screen_rect.shrink(2.0),
+                Rounding::ZERO,
+                egui::Stroke::new(4.0, Color32::from_rgb(100, 255, 100)),
+            );
+
+            // Draw instructions in center
+            let instructions =
+                "Press ENTER or click to capture full screen template.\nPress ESC to cancel.";
+            let center = screen_rect.center();
+
+            let text_galley = painter.layout_no_wrap(
+                instructions.to_string(),
+                FontId::proportional(20.0),
+                Color32::WHITE,
+            );
+            let text_rect =
+                Rect::from_center_size(center, text_galley.size() + egui::vec2(40.0, 20.0));
+
+            painter.rect_filled(
+                text_rect,
+                Rounding::same(8.0),
+                Color32::from_rgba_unmultiplied(0, 0, 0, 220),
+            );
+
+            painter.text(
+                center,
+                egui::Align2::CENTER_CENTER,
+                instructions,
+                FontId::proportional(20.0),
+                Color32::WHITE,
+            );
+        });
+}
+
+/// Render screen recognition status widget
+/// Shows the currently detected screen name and confidence
+pub fn render_screen_status_widget(
+    ctx: &egui::Context,
+    screen_name: Option<&str>,
+    confidence: f32,
+    anchor: Align2,
+    offset: Vec2,
+) {
+    if screen_name.is_none() && confidence == 0.0 {
+        return; // Don't show if no screen detected
+    }
+
+    egui::Area::new(egui::Id::new("screen_status_widget"))
+        .anchor(anchor, offset)
+        .show(ctx, |ui| {
+            egui::Frame::none()
+                .fill(Color32::from_rgba_unmultiplied(20, 20, 30, 200))
+                .rounding(Rounding::same(6.0))
+                .inner_margin(8.0)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        // Status indicator dot
+                        let indicator_color = if screen_name.is_some() {
+                            if confidence >= 0.9 {
+                                Color32::from_rgb(100, 255, 100) // Green for high confidence
+                            } else if confidence >= 0.7 {
+                                Color32::from_rgb(255, 255, 100) // Yellow for medium
+                            } else {
+                                Color32::from_rgb(255, 150, 100) // Orange for low
+                            }
+                        } else {
+                            Color32::from_rgb(150, 150, 150) // Gray for no detection
+                        };
+
+                        let (rect, _) =
+                            ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+                        ui.painter()
+                            .circle_filled(rect.center(), 4.0, indicator_color);
+
+                        ui.add_space(6.0);
+
+                        // Screen name
+                        if let Some(name) = screen_name {
+                            ui.label(
+                                RichText::new(name)
+                                    .color(Color32::WHITE)
+                                    .font(FontId::proportional(13.0)),
+                            );
+
+                            // Confidence percentage
+                            ui.label(
+                                RichText::new(format!("({:.0}%)", confidence * 100.0))
+                                    .color(Color32::from_rgb(180, 180, 180))
+                                    .font(FontId::proportional(11.0)),
+                            );
+                        } else {
+                            ui.label(
+                                RichText::new("No screen")
+                                    .color(Color32::from_rgb(150, 150, 150))
+                                    .font(FontId::proportional(13.0))
+                                    .italics(),
+                            );
+                        }
+                    });
+                });
         });
 }

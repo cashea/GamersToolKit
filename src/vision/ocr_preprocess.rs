@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Image preprocessing filters for OCR optimization
 //!
 //! Provides optional image enhancements to improve OCR accuracy,
@@ -18,14 +19,24 @@ pub struct PreprocessResult {
 
 /// Apply preprocessing filters to RGBA image data based on settings
 /// Returns a new Vec with the processed image data (original dimensions)
-pub fn apply_preprocessing(data: &[u8], width: u32, height: u32, settings: &OcrPreprocessing) -> Vec<u8> {
+pub fn apply_preprocessing(
+    data: &[u8],
+    width: u32,
+    height: u32,
+    settings: &OcrPreprocessing,
+) -> Vec<u8> {
     let result = apply_preprocessing_with_scale(data, width, height, settings);
     result.data
 }
 
 /// Apply preprocessing filters to RGBA image data based on settings
 /// Returns PreprocessResult with potentially scaled dimensions
-pub fn apply_preprocessing_with_scale(data: &[u8], width: u32, height: u32, settings: &OcrPreprocessing) -> PreprocessResult {
+pub fn apply_preprocessing_with_scale(
+    data: &[u8],
+    width: u32,
+    height: u32,
+    settings: &OcrPreprocessing,
+) -> PreprocessResult {
     if !settings.enabled {
         debug!("OCR preprocessing disabled");
         return PreprocessResult {
@@ -81,11 +92,11 @@ pub fn apply_preprocessing_with_scale(data: &[u8], width: u32, height: u32, sett
 /// Factor > 1.0 increases contrast, < 1.0 decreases
 fn apply_contrast(data: &mut [u8], factor: f32) {
     for chunk in data.chunks_exact_mut(4) {
-        for i in 0..3 {
-            let val = chunk[i] as f32;
+        for channel in chunk.iter_mut().take(3) {
+            let val = *channel as f32;
             // Contrast around midpoint (128)
             let adjusted = ((val - 128.0) * factor + 128.0).clamp(0.0, 255.0);
-            chunk[i] = adjusted as u8;
+            *channel = adjusted as u8;
         }
         // Alpha channel unchanged
     }
@@ -95,7 +106,8 @@ fn apply_contrast(data: &mut [u8], factor: f32) {
 fn apply_grayscale(data: &mut [u8]) {
     for chunk in data.chunks_exact_mut(4) {
         // Standard luminance weights
-        let gray = (0.299 * chunk[0] as f32 + 0.587 * chunk[1] as f32 + 0.114 * chunk[2] as f32) as u8;
+        let gray =
+            (0.299 * chunk[0] as f32 + 0.587 * chunk[1] as f32 + 0.114 * chunk[2] as f32) as u8;
         chunk[0] = gray;
         chunk[1] = gray;
         chunk[2] = gray;
@@ -258,9 +270,9 @@ mod tests {
     fn test_upscale_2x() {
         // 2x2 image (RGBA)
         let data = vec![
-            255, 0, 0, 255,   // Red
-            0, 255, 0, 255,   // Green
-            0, 0, 255, 255,   // Blue
+            255, 0, 0, 255, // Red
+            0, 255, 0, 255, // Green
+            0, 0, 255, 255, // Blue
             255, 255, 0, 255, // Yellow
         ];
         let result = apply_upscale(&data, 2, 2, 2);
@@ -279,10 +291,7 @@ mod tests {
     fn test_preprocessing_with_scale() {
         // 2x2 image
         let data = vec![
-            100, 100, 100, 255,
-            100, 100, 100, 255,
-            100, 100, 100, 255,
-            100, 100, 100, 255,
+            100, 100, 100, 255, 100, 100, 100, 255, 100, 100, 100, 255, 100, 100, 100, 255,
         ];
         let mut settings = OcrPreprocessing::default();
         settings.enabled = true;

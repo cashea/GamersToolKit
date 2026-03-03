@@ -1,12 +1,14 @@
+#![allow(dead_code)]
 //! Shared application state between dashboard and overlay
 
+use crate::capture::CaptureConfig;
 use crate::config::AppConfig;
 use crate::overlay::OverlayConfig;
-use crate::capture::CaptureConfig;
 use crate::storage::profiles::GameProfile;
+use crate::vision::ScreenMatch;
 
 /// Central shared state between dashboard and overlay
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SharedAppState {
     /// Application configuration
     pub config: AppConfig,
@@ -20,19 +22,6 @@ pub struct SharedAppState {
     pub active_profile_id: Option<String>,
     /// Runtime state (not persisted)
     pub runtime: RuntimeState,
-}
-
-impl Default for SharedAppState {
-    fn default() -> Self {
-        Self {
-            config: AppConfig::default(),
-            overlay_config: OverlayConfig::default(),
-            capture_config: CaptureConfig::default(),
-            profiles: Vec::new(),
-            active_profile_id: None,
-            runtime: RuntimeState::default(),
-        }
-    }
 }
 
 impl SharedAppState {
@@ -82,9 +71,9 @@ impl SharedAppState {
 
     /// Get the active profile if one is selected
     pub fn active_profile(&self) -> Option<&GameProfile> {
-        self.active_profile_id.as_ref().and_then(|id| {
-            self.profiles.iter().find(|p| &p.id == id)
-        })
+        self.active_profile_id
+            .as_ref()
+            .and_then(|id| self.profiles.iter().find(|p| &p.id == id))
     }
 
     /// Set the active profile by ID
@@ -156,6 +145,24 @@ pub struct RuntimeState {
     pub overlay_command: Option<OverlayCommand>,
     /// Request to send a test tip
     pub send_test_tip: bool,
+    /// Custom message for the test tip
+    pub test_tip_message: Option<(String, u32)>,
+    // Screen Recognition State
+    /// Currently detected screen (if screen recognition is active)
+    pub current_screen: Option<ScreenMatch>,
+    /// Previous screen (for detecting screen changes)
+    pub previous_screen_id: Option<String>,
+    /// Whether a screen change just occurred
+    pub screen_just_changed: bool,
+    /// Last screen recognition time in milliseconds
+    pub last_screen_check_ms: u64,
+    // MCP Support Fields
+    /// Tips queued by MCP tools (consumed by overlay when running)
+    pub pending_tips: Vec<crate::analysis::Tip>,
+    /// Last OCR results from vision pipeline: (zone_id, detected_text)
+    pub last_ocr_results: Vec<(String, String)>,
+    /// Latest captured frame (shared via Arc for zero-copy access by MCP screenshot tool)
+    pub last_captured_frame: Option<std::sync::Arc<crate::capture::CapturedFrame>>,
 }
 
 impl RuntimeState {
@@ -167,5 +174,39 @@ impl RuntimeState {
     /// Set an error message
     pub fn set_error(&mut self, error: impl Into<String>) {
         self.last_error = Some(error.into());
+    }
+
+    /// Update the current screen match
+    /// Returns true if the screen changed
+    pub fn update_screen(&mut self, new_match: Option<ScreenMatch>) -> bool {
+        let new_screen_id = new_match.as_ref().map(|m| m.screen_id.clone());
+        let changed = self.previous_screen_id != new_screen_id;
+
+        if changed {
+            self.previous_screen_id = self.current_screen.as_ref().map(|m| m.screen_id.clone());
+            self.screen_just_changed = true;
+        } else {
+            self.screen_just_changed = false;
+        }
+
+        self.current_screen = new_match;
+        changed
+    }
+
+    /// Get the current screen name if any
+    pub fn current_screen_name(&self) -> Option<&str> {
+        self.current_screen.as_ref().map(|m| m.screen_name.as_str())
+    }
+
+    /// Get the current screen confidence if any
+    pub fn current_screen_confidence(&self) -> Option<f32> {
+        self.current_screen.as_ref().map(|m| m.confidence)
+    }
+
+    /// Clear screen recognition state
+    pub fn clear_screen(&mut self) {
+        self.previous_screen_id = self.current_screen.as_ref().map(|m| m.screen_id.clone());
+        self.current_screen = None;
+        self.screen_just_changed = self.previous_screen_id.is_some();
     }
 }

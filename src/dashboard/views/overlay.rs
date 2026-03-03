@@ -5,8 +5,9 @@ use parking_lot::RwLock;
 use std::cell::Cell;
 use std::sync::Arc;
 
+use crate::dashboard::components::add_scroll_slider;
 use crate::dashboard::state::OverlayViewState;
-use crate::dashboard::theme::{ThemeColors, color_with_alpha};
+use crate::dashboard::theme::{color_with_alpha, ThemeColors};
 use crate::overlay::OverlayAnchor;
 use crate::shared::SharedAppState;
 
@@ -21,7 +22,7 @@ pub fn render_overlay_view(
     ui.label(
         RichText::new("Customize overlay appearance and positioning")
             .size(14.0)
-            .color(ThemeColors::TEXT_SECONDARY)
+            .color(ThemeColors::TEXT_SECONDARY),
     );
 
     ui.add_space(24.0);
@@ -49,10 +50,7 @@ pub fn render_overlay_view(
 }
 
 /// Render the settings column
-fn render_settings_column(
-    ui: &mut egui::Ui,
-    shared_state: &Arc<RwLock<SharedAppState>>,
-) {
+fn render_settings_column(ui: &mut egui::Ui, shared_state: &Arc<RwLock<SharedAppState>>) {
     // Track changes for auto-save
     let changed = Cell::new(false);
 
@@ -77,7 +75,10 @@ fn render_settings_column(
                     (OverlayAnchor::TopRight, "Top Right"),
                 ];
                 for (anchor, label) in anchors {
-                    if ui.selectable_label(state.overlay_config.anchor == anchor, label).clicked() {
+                    if ui
+                        .selectable_label(state.overlay_config.anchor == anchor, label)
+                        .clicked()
+                    {
                         state.overlay_config.anchor = anchor;
                         changed.set(true);
                     }
@@ -91,7 +92,10 @@ fn render_settings_column(
                     (OverlayAnchor::BottomRight, "Bottom Right"),
                 ];
                 for (anchor, label) in anchors {
-                    if ui.selectable_label(state.overlay_config.anchor == anchor, label).clicked() {
+                    if ui
+                        .selectable_label(state.overlay_config.anchor == anchor, label)
+                        .clicked()
+                    {
                         state.overlay_config.anchor = anchor;
                         changed.set(true);
                     }
@@ -104,14 +108,18 @@ fn render_settings_column(
             // Offset sliders
             ui.label("Offset X:");
             let mut offset_x = state.overlay_config.offset.0 as f32;
-            if ui.add(egui::Slider::new(&mut offset_x, 0.0..=200.0).suffix(" px")).changed() {
+            if add_scroll_slider(ui, &mut offset_x, 0.0..=200.0, Some(5.0), Some(" px"), None)
+                .changed()
+            {
                 state.overlay_config.offset.0 = offset_x as i32;
                 changed.set(true);
             }
 
             ui.label("Offset Y:");
             let mut offset_y = state.overlay_config.offset.1 as f32;
-            if ui.add(egui::Slider::new(&mut offset_y, 0.0..=200.0).suffix(" px")).changed() {
+            if add_scroll_slider(ui, &mut offset_y, 0.0..=200.0, Some(5.0), Some(" px"), None)
+                .changed()
+            {
                 state.overlay_config.offset.1 = offset_y as i32;
                 changed.set(true);
             }
@@ -127,7 +135,7 @@ fn render_settings_column(
             // Opacity slider
             ui.label("Opacity:");
             let mut opacity = state.overlay_config.opacity;
-            if ui.add(egui::Slider::new(&mut opacity, 0.1..=1.0).show_value(true)).changed() {
+            if add_scroll_slider(ui, &mut opacity, 0.1..=1.0, Some(0.05), None, None).changed() {
                 state.overlay_config.opacity = opacity;
                 changed.set(true);
             }
@@ -137,7 +145,16 @@ fn render_settings_column(
             // Max width slider
             ui.label("Tip width:");
             let mut max_width = state.overlay_config.max_width;
-            if ui.add(egui::Slider::new(&mut max_width, 200.0..=600.0).suffix(" px")).changed() {
+            if add_scroll_slider(
+                ui,
+                &mut max_width,
+                200.0..=600.0,
+                Some(20.0),
+                Some(" px"),
+                None,
+            )
+            .changed()
+            {
                 state.overlay_config.max_width = max_width;
                 changed.set(true);
             }
@@ -147,7 +164,7 @@ fn render_settings_column(
             // Max tips slider
             ui.label("Max tips shown:");
             let mut max_tips = state.overlay_config.max_tips as f32;
-            if ui.add(egui::Slider::new(&mut max_tips, 1.0..=10.0)).changed() {
+            if add_scroll_slider(ui, &mut max_tips, 1.0..=10.0, Some(1.0), None, None).changed() {
                 state.overlay_config.max_tips = max_tips as usize;
                 changed.set(true);
             }
@@ -157,7 +174,9 @@ fn render_settings_column(
             // Default duration slider
             ui.label("Default duration:");
             let mut duration = state.overlay_config.default_duration_ms as f32 / 1000.0;
-            if ui.add(egui::Slider::new(&mut duration, 1.0..=30.0).suffix(" s")).changed() {
+            if add_scroll_slider(ui, &mut duration, 1.0..=30.0, Some(1.0), Some(" s"), None)
+                .changed()
+            {
                 state.overlay_config.default_duration_ms = (duration * 1000.0) as u64;
                 changed.set(true);
             }
@@ -172,13 +191,16 @@ fn render_settings_column(
 
             ui.label("Monitor:");
             let mut monitor = state.overlay_config.monitor_index.unwrap_or(0) as f32;
-            if ui.add(egui::Slider::new(&mut monitor, 0.0..=3.0)).changed() {
+            if add_scroll_slider(ui, &mut monitor, 0.0..=3.0, Some(1.0), None, None).changed() {
                 state.overlay_config.monitor_index = Some(monitor as usize);
                 changed.set(true);
             }
 
             ui.add_space(8.0);
-            if ui.checkbox(&mut state.overlay_config.enabled, "Overlay enabled").changed() {
+            if ui
+                .checkbox(&mut state.overlay_config.enabled, "Overlay enabled")
+                .changed()
+            {
                 changed.set(true);
             }
 
@@ -193,7 +215,10 @@ fn render_settings_column(
             ui.horizontal(|ui| {
                 ui.label("Toggle visibility:");
                 ui.add_space(8.0);
-                let hotkey_text = state.config.overlay.toggle_hotkey
+                let hotkey_text = state
+                    .config
+                    .overlay
+                    .toggle_hotkey
                     .as_deref()
                     .unwrap_or("Not set");
                 ui.label(RichText::new(hotkey_text).strong().monospace());
@@ -203,7 +228,7 @@ fn render_settings_column(
             ui.label(
                 RichText::new("Press this key to show/hide the overlay")
                     .size(12.0)
-                    .color(ThemeColors::TEXT_MUTED)
+                    .color(ThemeColors::TEXT_MUTED),
             );
 
             ui.add_space(8.0);
@@ -263,10 +288,7 @@ fn render_preview_column(
                 .stroke(egui::Stroke::new(1.0, ThemeColors::BORDER))
                 .show(ui, |ui| {
                     let available_size = ui.available_size();
-                    let preview_size = egui::vec2(
-                        available_size.x.min(280.0),
-                        160.0
-                    );
+                    let preview_size = egui::vec2(available_size.x.min(280.0), 160.0);
                     ui.set_min_size(preview_size);
 
                     // Draw a visual representation of overlay position
@@ -290,16 +312,32 @@ fn render_preview_column(
 
                     let tip_pos = match anchor {
                         OverlayAnchor::TopLeft => {
-                            rect.left_top() + egui::vec2(8.0 + offset.0 as f32 * scale, 8.0 + offset.1 as f32 * scale)
+                            rect.left_top()
+                                + egui::vec2(
+                                    8.0 + offset.0 as f32 * scale,
+                                    8.0 + offset.1 as f32 * scale,
+                                )
                         }
                         OverlayAnchor::TopRight => {
-                            rect.right_top() + egui::vec2(-8.0 - tip_size.x - offset.0 as f32 * scale, 8.0 + offset.1 as f32 * scale)
+                            rect.right_top()
+                                + egui::vec2(
+                                    -8.0 - tip_size.x - offset.0 as f32 * scale,
+                                    8.0 + offset.1 as f32 * scale,
+                                )
                         }
                         OverlayAnchor::BottomLeft => {
-                            rect.left_bottom() + egui::vec2(8.0 + offset.0 as f32 * scale, -8.0 - tip_size.y - offset.1 as f32 * scale)
+                            rect.left_bottom()
+                                + egui::vec2(
+                                    8.0 + offset.0 as f32 * scale,
+                                    -8.0 - tip_size.y - offset.1 as f32 * scale,
+                                )
                         }
                         OverlayAnchor::BottomRight => {
-                            rect.right_bottom() + egui::vec2(-8.0 - tip_size.x - offset.0 as f32 * scale, -8.0 - tip_size.y - offset.1 as f32 * scale)
+                            rect.right_bottom()
+                                + egui::vec2(
+                                    -8.0 - tip_size.x - offset.0 as f32 * scale,
+                                    -8.0 - tip_size.y - offset.1 as f32 * scale,
+                                )
                         }
                     };
 
@@ -334,13 +372,22 @@ fn render_preview_column(
             ui.add_space(4.0);
             ui.label("Priority:");
             let mut priority = view_state.preview_tip_priority as f32;
-            ui.add(egui::Slider::new(&mut priority, 0.0..=100.0));
+            add_scroll_slider(ui, &mut priority, 0.0..=100.0, Some(5.0), None, None);
             view_state.preview_tip_priority = priority as u32;
 
             ui.add_space(8.0);
 
             if ui.button("Send Test Tip").clicked() {
-                // Will be connected to tip sender
+                let mut state = shared_state.write();
+                state.runtime.send_test_tip = true;
+
+                let message = if view_state.preview_tip_text.is_empty() {
+                    "This is a test tip from GamersToolKit!".to_string()
+                } else {
+                    view_state.preview_tip_text.clone()
+                };
+
+                state.runtime.test_tip_message = Some((message, view_state.preview_tip_priority));
             }
         });
 }

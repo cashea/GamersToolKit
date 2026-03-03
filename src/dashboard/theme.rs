@@ -1,8 +1,9 @@
+#![allow(dead_code)]
 //! Dashboard theme and styling
 //!
 //! Dark gaming-inspired theme for the dashboard UI.
 
-use egui::{Color32, FontFamily, FontId, Rounding, Stroke, Style, TextStyle, Visuals};
+use egui::{Color32, FontFamily, FontId, Rounding, Stroke, TextStyle, Visuals};
 
 /// Gaming-inspired dark color palette
 pub struct ThemeColors;
@@ -95,11 +96,23 @@ pub fn apply_theme(ctx: &egui::Context) {
 
     // Font sizes - larger for better readability
     style.text_styles = [
-        (TextStyle::Small, FontId::new(13.0, FontFamily::Proportional)),
+        (
+            TextStyle::Small,
+            FontId::new(13.0, FontFamily::Proportional),
+        ),
         (TextStyle::Body, FontId::new(16.0, FontFamily::Proportional)),
-        (TextStyle::Monospace, FontId::new(15.0, FontFamily::Monospace)),
-        (TextStyle::Button, FontId::new(16.0, FontFamily::Proportional)),
-        (TextStyle::Heading, FontId::new(22.0, FontFamily::Proportional)),
+        (
+            TextStyle::Monospace,
+            FontId::new(15.0, FontFamily::Monospace),
+        ),
+        (
+            TextStyle::Button,
+            FontId::new(16.0, FontFamily::Proportional),
+        ),
+        (
+            TextStyle::Heading,
+            FontId::new(22.0, FontFamily::Proportional),
+        ),
     ]
     .into();
 

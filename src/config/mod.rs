@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 /// Application settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
     /// General settings
     pub general: GeneralConfig,
@@ -23,19 +23,6 @@ pub struct AppConfig {
     /// Dashboard UI settings
     #[serde(default)]
     pub dashboard: DashboardSettings,
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            general: GeneralConfig::default(),
-            capture: CaptureSettings::default(),
-            overlay: OverlaySettings::default(),
-            performance: PerformanceConfig::default(),
-            vision: VisionSettings::default(),
-            dashboard: DashboardSettings::default(),
-        }
-    }
 }
 
 /// General application settings
@@ -96,6 +83,9 @@ pub struct OverlaySettings {
     pub sound_volume: f32,
     /// Hotkey to toggle overlay visibility (e.g., "F9", "Ctrl+Shift+O")
     pub toggle_hotkey: Option<String>,
+    /// Hotkey to enter zone selection mode (e.g., "Ctrl+Shift+Z")
+    #[serde(default = "default_zone_selection_hotkey")]
+    pub zone_selection_hotkey: Option<String>,
     /// Position offset from anchor corner (x, y)
     #[serde(default = "default_overlay_offset")]
     pub offset: (i32, i32),
@@ -150,6 +140,10 @@ fn default_click_through() -> bool {
     true
 }
 
+fn default_zone_selection_hotkey() -> Option<String> {
+    Some("Ctrl+Shift+Z".to_string())
+}
+
 impl Default for OverlaySettings {
     fn default() -> Self {
         Self {
@@ -158,6 +152,7 @@ impl Default for OverlaySettings {
             sound_enabled: true,
             sound_volume: 0.7,
             toggle_hotkey: Some("F9".to_string()),
+            zone_selection_hotkey: default_zone_selection_hotkey(),
             offset: default_overlay_offset(),
             anchor: OverlayAnchor::default(),
             max_tips: default_max_tips(),
@@ -395,10 +390,16 @@ mod tests {
         let parsed: AppConfig = toml::from_str(&toml_str).unwrap();
 
         // Verify values match
-        assert_eq!(config.general.start_minimized, parsed.general.start_minimized);
+        assert_eq!(
+            config.general.start_minimized,
+            parsed.general.start_minimized
+        );
         assert_eq!(config.capture.max_fps, parsed.capture.max_fps);
         assert_eq!(config.overlay.enabled, parsed.overlay.enabled);
-        assert_eq!(config.performance.max_memory_mb, parsed.performance.max_memory_mb);
+        assert_eq!(
+            config.performance.max_memory_mb,
+            parsed.performance.max_memory_mb
+        );
     }
 
     #[test]
