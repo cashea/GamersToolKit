@@ -39,7 +39,11 @@ impl McpServer {
             },
             capabilities: ServerCapabilities {
                 tools: Some(ServerCapabilitiesTools { list_changed: None }),
-                resources: None,
+                resources: Some(rust_mcp_schema::ServerCapabilitiesResources {
+                    list_changed: None,
+                    subscribe: None,
+                }),
+                prompts: Some(rust_mcp_schema::ServerCapabilitiesPrompts { list_changed: None }),
                 completions: None,
                 tasks: None,
                 ..Default::default()
@@ -102,6 +106,22 @@ impl ServerHandler for GamersToolKitHandler {
             tools::GamersToolKitTools::GetCurrentScreenTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
             tools::GamersToolKitTools::GetActiveProfileTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
             tools::GamersToolKitTools::SendOverlayTipTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
+            tools::GamersToolKitTools::GetRuntimeStatusTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
+            tools::GamersToolKitTools::ListProfilesTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
+            tools::GamersToolKitTools::SetActiveProfileTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
+            tools::GamersToolKitTools::CreateProfileTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
+            tools::GamersToolKitTools::DeleteProfileTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
+            tools::GamersToolKitTools::ListWindowsTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
+            tools::GamersToolKitTools::ListMonitorsTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
+            tools::GamersToolKitTools::GetConfigTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
+            tools::GamersToolKitTools::UpdateOverlayConfigTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
+            tools::GamersToolKitTools::GetOcrRegionsTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
+            tools::GamersToolKitTools::AddOcrRegionTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
+            tools::GamersToolKitTools::RemoveOcrRegionTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
+            tools::GamersToolKitTools::ListScreensTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
+            tools::GamersToolKitTools::AddScreenTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
+            tools::GamersToolKitTools::GetLastOcrResultsTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
+            tools::GamersToolKitTools::CaptureScreenshotTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
         }
     }
 
@@ -113,7 +133,11 @@ impl ServerHandler for GamersToolKitHandler {
         Ok(ListResourcesResult {
             meta: None,
             next_cursor: None,
-            resources: vec![resources::ProfileActiveResource::resource()],
+            resources: vec![
+                    resources::ProfileActiveResource::resource(),
+                    resources::ConfigCurrentResource::resource(),
+                    resources::RuntimeStatusResource::resource(),
+                ],
         })
     }
 
@@ -134,12 +158,19 @@ impl ServerHandler for GamersToolKitHandler {
         params: ReadResourceRequestParams,
         _runtime: Arc<dyn McpServerTrait>,
     ) -> std::result::Result<ReadResourceResult, RpcError> {
-        if params.uri == "profile://active" {
-            return resources::ProfileActiveResource::get_resource(Arc::clone(&self.shared_state)).await;
+        match params.uri.as_str() {
+            "profile://active" => {
+                resources::ProfileActiveResource::get_resource(Arc::clone(&self.shared_state)).await
+            }
+            "config://current" => {
+                resources::ConfigCurrentResource::get_resource(Arc::clone(&self.shared_state)).await
+            }
+            "runtime://status" => {
+                resources::RuntimeStatusResource::get_resource(Arc::clone(&self.shared_state)).await
+            }
+            _ => Err(RpcError::invalid_request()
+                .with_message(format!("No resource was found for '{}'.", params.uri))),
         }
-
-        Err(RpcError::invalid_request()
-            .with_message(format!("No resource was found for '{}'.", params.uri)))
     }
 
     async fn handle_list_prompts_request(
@@ -150,7 +181,10 @@ impl ServerHandler for GamersToolKitHandler {
         Ok(rust_mcp_schema::ListPromptsResult {
             meta: None,
             next_cursor: None,
-            prompts: vec![prompts::AnalyzeGameStatePrompt::prompt()],
+            prompts: vec![
+                    prompts::AnalyzeGameStatePrompt::prompt(),
+                    prompts::CreateGameProfilePrompt::prompt(),
+                ],
         })
     }
 
@@ -159,16 +193,24 @@ impl ServerHandler for GamersToolKitHandler {
         params: rust_mcp_schema::GetPromptRequestParams,
         _runtime: Arc<dyn McpServerTrait>,
     ) -> std::result::Result<rust_mcp_schema::GetPromptResult, RpcError> {
-        if params.name == "analyze_game_state" {
-            return prompts::AnalyzeGameStatePrompt::get_prompt(
-                Arc::clone(&self.shared_state),
-                params.arguments,
-            )
-            .await;
+        match params.name.as_str() {
+            "analyze_game_state" => {
+                prompts::AnalyzeGameStatePrompt::get_prompt(
+                    Arc::clone(&self.shared_state),
+                    params.arguments,
+                )
+                .await
+            }
+            "create_game_profile" => {
+                prompts::CreateGameProfilePrompt::get_prompt(
+                    Arc::clone(&self.shared_state),
+                    params.arguments,
+                )
+                .await
+            }
+            _ => Err(RpcError::invalid_request()
+                .with_message(format!("No prompt was found for '{}'.", params.name))),
         }
-
-        Err(RpcError::invalid_request()
-            .with_message(format!("No prompt was found for '{}'.", params.name)))
     }
 
     async fn handle_complete_request(

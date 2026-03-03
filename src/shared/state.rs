@@ -168,6 +168,13 @@ pub struct RuntimeState {
     pub screen_just_changed: bool,
     /// Last screen recognition time in milliseconds
     pub last_screen_check_ms: u64,
+    // MCP Support Fields
+    /// Tips queued by MCP tools (consumed by overlay when running)
+    pub pending_tips: Vec<crate::analysis::Tip>,
+    /// Last OCR results from vision pipeline: (zone_id, detected_text)
+    pub last_ocr_results: Vec<(String, String)>,
+    /// Latest captured frame (shared via Arc for zero-copy access by MCP screenshot tool)
+    pub last_captured_frame: Option<std::sync::Arc<crate::capture::CapturedFrame>>,
 }
 
 impl RuntimeState {

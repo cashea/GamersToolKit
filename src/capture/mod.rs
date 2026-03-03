@@ -319,6 +319,40 @@ fn run_capture(
     Ok(())
 }
 
+/// Capture a single frame from the given target and return it.
+///
+/// This creates a temporary capture session, grabs the first frame,
+/// then stops. Useful for on-demand screenshots without a persistent capture loop.
+pub fn capture_frame_once(target: &CaptureTarget) -> Result<CapturedFrame> {
+    let config = CaptureConfig {
+        target: target.clone(),
+        max_fps: 30,
+        capture_cursor: false,
+        draw_border: false,
+    };
+
+    let mut capture = ScreenCapture::new(config)?;
+    capture.start()?;
+
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(5);
+
+    loop {
+        if let Some(frame) = capture.try_next_frame() {
+            let _ = capture.stop();
+            return Ok(frame);
+        }
+        if start.elapsed() > timeout {
+            let _ = capture.stop();
+            return Err(anyhow::anyhow!(
+                "Timeout waiting for frame from {:?}",
+                target
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
 /// Bring a window to the foreground by title (partial match)
 ///
 /// Uses Windows API to find the window and set it as the foreground window.

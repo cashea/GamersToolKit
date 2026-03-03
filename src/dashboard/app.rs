@@ -447,8 +447,15 @@ impl DashboardApp {
         let mut capture_guard = self.capture_manager.lock();
         if let Some(ref capture) = *capture_guard {
             // Try to get frames without blocking to calculate FPS
-            while capture.try_next_frame().is_some() {
+            let mut latest_frame = None;
+            while let Some(frame) = capture.try_next_frame() {
                 self.frame_counter.frames_this_second += 1;
+                latest_frame = Some(frame);
+            }
+            // Store the most recent frame for MCP screenshot tool
+            if let Some(frame) = latest_frame {
+                self.shared_state.write().runtime.last_captured_frame =
+                    Some(std::sync::Arc::new(frame));
             }
 
             // Update FPS every second
