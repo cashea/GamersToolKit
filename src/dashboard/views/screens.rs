@@ -1,15 +1,16 @@
+#![allow(dead_code)]
 //! Screen Recognition View
 //!
 //! UI for managing screen definitions and screen recognition settings.
 
-use std::sync::Arc;
 use egui::{RichText, ScrollArea};
 use parking_lot::RwLock;
+use std::sync::Arc;
 
 use crate::dashboard::state::{DashboardState, ScreensViewState};
 use crate::dashboard::theme::ThemeColors;
 use crate::shared::SharedAppState;
-use crate::storage::profiles::{ScreenDefinition, ScreenMatchMode, ScreenAnchor, AnchorType};
+use crate::storage::profiles::{AnchorType, ScreenAnchor, ScreenDefinition, ScreenMatchMode};
 
 /// Render the screens view
 pub fn render_screens_view(
@@ -25,18 +26,28 @@ pub fn render_screens_view(
 
         // Recognition toggle
         let shared = shared_state.read();
-        let is_enabled = shared.active_profile()
+        let is_enabled = shared
+            .active_profile()
             .map(|p| p.screen_recognition_enabled)
             .unwrap_or(false);
         drop(shared);
 
         let toggle_text = if is_enabled { "Enabled" } else { "Disabled" };
-        let toggle_color = if is_enabled { ThemeColors::ACCENT_SUCCESS } else { ThemeColors::TEXT_MUTED };
+        let toggle_color = if is_enabled {
+            ThemeColors::ACCENT_SUCCESS
+        } else {
+            ThemeColors::TEXT_MUTED
+        };
 
-        if ui.button(RichText::new(toggle_text).color(toggle_color)).clicked() {
+        if ui
+            .button(RichText::new(toggle_text).color(toggle_color))
+            .clicked()
+        {
             let mut shared = shared_state.write();
             let active_id = shared.active_profile_id.clone();
-            if let Some(profile) = shared.profiles.iter_mut()
+            if let Some(profile) = shared
+                .profiles
+                .iter_mut()
                 .find(|p| active_id.as_ref() == Some(&p.id))
             {
                 profile.screen_recognition_enabled = !profile.screen_recognition_enabled;
@@ -53,9 +64,15 @@ pub fn render_screens_view(
         if let Some(ref screen_match) = shared.runtime.current_screen {
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Current Screen:").color(ThemeColors::TEXT_SECONDARY));
-                ui.label(RichText::new(&screen_match.screen_name).color(ThemeColors::ACCENT_PRIMARY).strong());
-                ui.label(RichText::new(format!("({:.0}%)", screen_match.confidence * 100.0))
-                    .color(ThemeColors::TEXT_MUTED));
+                ui.label(
+                    RichText::new(&screen_match.screen_name)
+                        .color(ThemeColors::ACCENT_PRIMARY)
+                        .strong(),
+                );
+                ui.label(
+                    RichText::new(format!("({:.0}%)", screen_match.confidence * 100.0))
+                        .color(ThemeColors::TEXT_MUTED),
+                );
             });
         } else {
             ui.label(RichText::new("No screen detected").color(ThemeColors::TEXT_MUTED));
@@ -77,7 +94,11 @@ pub fn render_screens_view(
             ui.set_min_height(available_height);
 
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Screens").color(ThemeColors::TEXT_PRIMARY).strong());
+                ui.label(
+                    RichText::new("Screens")
+                        .color(ThemeColors::TEXT_PRIMARY)
+                        .strong(),
+                );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let has_active_profile = {
                         let shared = shared_state.read();
@@ -119,8 +140,10 @@ pub fn render_screens_view(
                 render_screen_details(ui, screen_id, view_state, shared_state);
             } else {
                 ui.centered_and_justified(|ui| {
-                    ui.label(RichText::new("Select a screen to view details")
-                        .color(ThemeColors::TEXT_MUTED));
+                    ui.label(
+                        RichText::new("Select a screen to view details")
+                            .color(ThemeColors::TEXT_MUTED),
+                    );
                 });
             }
         });
@@ -156,36 +179,54 @@ fn render_screen_tree(
 ) {
     let shared = shared_state.read();
     let has_active_profile = shared.active_profile_id.is_some();
-    let screens = shared.active_profile()
+    let screens = shared
+        .active_profile()
         .map(|p| p.screens.clone())
         .unwrap_or_default();
     drop(shared);
 
     if !has_active_profile {
-        ui.label(RichText::new("No profile selected").color(ThemeColors::TEXT_MUTED).italics());
+        ui.label(
+            RichText::new("No profile selected")
+                .color(ThemeColors::TEXT_MUTED)
+                .italics(),
+        );
         ui.add_space(8.0);
-        ui.label(RichText::new("Go to Profiles and activate a profile first")
-            .color(ThemeColors::TEXT_MUTED).small());
+        ui.label(
+            RichText::new("Go to Profiles and activate a profile first")
+                .color(ThemeColors::TEXT_MUTED)
+                .small(),
+        );
         return;
     }
 
     if screens.is_empty() {
-        ui.label(RichText::new("No screens defined").color(ThemeColors::TEXT_MUTED).italics());
+        ui.label(
+            RichText::new("No screens defined")
+                .color(ThemeColors::TEXT_MUTED)
+                .italics(),
+        );
         ui.add_space(8.0);
-        ui.label(RichText::new("Click '+' to add a screen").color(ThemeColors::TEXT_MUTED).small());
+        ui.label(
+            RichText::new("Click '+' to add a screen")
+                .color(ThemeColors::TEXT_MUTED)
+                .small(),
+        );
         return;
     }
 
     // Hint for drag and drop
     if screens.len() > 1 {
-        ui.label(RichText::new("Drag to reorder priority").color(ThemeColors::TEXT_MUTED).small());
+        ui.label(
+            RichText::new("Drag to reorder priority")
+                .color(ThemeColors::TEXT_MUTED)
+                .small(),
+        );
         ui.add_space(4.0);
     }
 
     // Build tree structure - find root screens first, sorted by priority (higher first)
-    let mut root_screens: Vec<_> = screens.iter()
-        .filter(|s| s.parent_id.is_none())
-        .collect();
+    let mut root_screens: Vec<_> = screens.iter().filter(|s| s.parent_id.is_none()).collect();
     root_screens.sort_by(|a, b| b.priority.cmp(&a.priority));
 
     // Track drop operations to perform after rendering
@@ -199,10 +240,8 @@ fn render_screen_tree(
 
     // Handle drop at the end (after all screens - lowest priority)
     if view_state.dragging_screen_id.is_some() {
-        let drop_zone_response = ui.allocate_response(
-            egui::vec2(ui.available_width(), 20.0),
-            egui::Sense::hover(),
-        );
+        let drop_zone_response =
+            ui.allocate_response(egui::vec2(ui.available_width(), 20.0), egui::Sense::hover());
 
         if drop_zone_response.hovered() && ui.input(|i| i.pointer.any_released()) {
             // Drop at the end - set to lowest priority
@@ -215,7 +254,12 @@ fn render_screen_tree(
     // Handle mouse release to end drag
     if ui.input(|i| i.pointer.any_released()) {
         if let Some((dragged_id, target_id, before)) = drop_action {
-            reorder_screen_priority(shared_state, &dragged_id, Some((&target_id, before)), view_state);
+            reorder_screen_priority(
+                shared_state,
+                &dragged_id,
+                Some((&target_id, before)),
+                view_state,
+            );
         }
         view_state.dragging_screen_id = None;
         view_state.drop_target_screen_id = None;
@@ -246,11 +290,10 @@ fn render_screen_tree_node(
         ui.horizontal(|ui| {
             ui.add_space(indent);
             let rect = ui.available_rect_before_wrap();
-            let indicator_rect = egui::Rect::from_min_size(
-                rect.min,
-                egui::vec2(rect.width().min(200.0), 2.0),
-            );
-            ui.painter().rect_filled(indicator_rect, 0.0, ThemeColors::ACCENT_PRIMARY);
+            let indicator_rect =
+                egui::Rect::from_min_size(rect.min, egui::vec2(rect.width().min(200.0), 2.0));
+            ui.painter()
+                .rect_filled(indicator_rect, 0.0, ThemeColors::ACCENT_PRIMARY);
         });
     }
 
@@ -259,14 +302,17 @@ fn render_screen_tree_node(
 
         // Drag handle for root screens
         if is_root {
-            let drag_handle_text = RichText::new("≡")
-                .color(if is_being_dragged { ThemeColors::ACCENT_PRIMARY } else { ThemeColors::TEXT_MUTED });
+            let drag_handle_text = RichText::new("≡").color(if is_being_dragged {
+                ThemeColors::ACCENT_PRIMARY
+            } else {
+                ThemeColors::TEXT_MUTED
+            });
 
             // Use a Button styled as a label for drag functionality
             let drag_handle = ui.add(
                 egui::Button::new(drag_handle_text)
                     .frame(false)
-                    .sense(egui::Sense::drag())
+                    .sense(egui::Sense::drag()),
             );
 
             // Start drag on drag handle
@@ -284,7 +330,8 @@ fn render_screen_tree_node(
         }
 
         // Find children to determine if we show expand indicator
-        let children: Vec<_> = all_screens.iter()
+        let children: Vec<_> = all_screens
+            .iter()
             .filter(|s| s.parent_id.as_ref() == Some(&screen.id))
             .collect();
 
@@ -302,9 +349,7 @@ fn render_screen_tree_node(
         };
 
         // Adjust color based on drag state
-        let text_color = if is_being_dragged {
-            ThemeColors::ACCENT_PRIMARY
-        } else if is_selected {
+        let text_color = if is_being_dragged || is_selected {
             ThemeColors::ACCENT_PRIMARY
         } else if screen.enabled {
             ThemeColors::TEXT_PRIMARY
@@ -315,12 +360,18 @@ fn render_screen_tree_node(
         ui.label(RichText::new(icon).color(ThemeColors::TEXT_MUTED).small());
 
         // Priority indicator
-        ui.label(RichText::new(format!("({})", screen.priority)).color(ThemeColors::TEXT_MUTED).small());
+        ui.label(
+            RichText::new(format!("({})", screen.priority))
+                .color(ThemeColors::TEXT_MUTED)
+                .small(),
+        );
 
-        if ui.selectable_label(is_selected, RichText::new(&screen.name).color(text_color)).clicked() {
-            if view_state.dragging_screen_id.is_none() {
-                view_state.selected_screen_id = Some(screen.id.clone());
-            }
+        if ui
+            .selectable_label(is_selected, RichText::new(&screen.name).color(text_color))
+            .clicked()
+            && view_state.dragging_screen_id.is_none()
+        {
+            view_state.selected_screen_id = Some(screen.id.clone());
         }
     });
 
@@ -351,22 +402,23 @@ fn render_screen_tree_node(
         ui.horizontal(|ui| {
             ui.add_space(indent);
             let rect = ui.available_rect_before_wrap();
-            let indicator_rect = egui::Rect::from_min_size(
-                rect.min,
-                egui::vec2(rect.width().min(200.0), 2.0),
-            );
-            ui.painter().rect_filled(indicator_rect, 0.0, ThemeColors::ACCENT_PRIMARY);
+            let indicator_rect =
+                egui::Rect::from_min_size(rect.min, egui::vec2(rect.width().min(200.0), 2.0));
+            ui.painter()
+                .rect_filled(indicator_rect, 0.0, ThemeColors::ACCENT_PRIMARY);
         });
     }
 
     // Render children (sorted by priority)
-    let mut children: Vec<_> = all_screens.iter()
+    let mut children: Vec<_> = all_screens
+        .iter()
         .filter(|s| s.parent_id.as_ref() == Some(&screen.id))
         .collect();
     children.sort_by(|a, b| b.priority.cmp(&a.priority));
 
     for child in children {
-        if let Some(action) = render_screen_tree_node(ui, child, all_screens, view_state, depth + 1) {
+        if let Some(action) = render_screen_tree_node(ui, child, all_screens, view_state, depth + 1)
+        {
             drop_action = Some(action);
         }
     }
@@ -384,9 +436,15 @@ fn reorder_screen_priority(
     let mut shared = shared_state.write();
     let active_id = shared.active_profile_id.clone();
 
-    if let Some(profile) = shared.profiles.iter_mut().find(|p| active_id.as_ref() == Some(&p.id)) {
+    if let Some(profile) = shared
+        .profiles
+        .iter_mut()
+        .find(|p| active_id.as_ref() == Some(&p.id))
+    {
         // Get only root screens (no parent) sorted by priority descending
-        let mut root_screens: Vec<_> = profile.screens.iter()
+        let mut root_screens: Vec<_> = profile
+            .screens
+            .iter()
             .filter(|s| s.parent_id.is_none())
             .map(|s| (s.id.clone(), s.priority))
             .collect();
@@ -441,7 +499,8 @@ fn render_screen_details(
 ) {
     // Get screen data for display
     let shared = shared_state.read();
-    let screen = shared.active_profile()
+    let screen = shared
+        .active_profile()
         .and_then(|p| p.screens.iter().find(|s| s.id == screen_id).cloned());
     drop(shared);
 
@@ -469,7 +528,11 @@ fn render_screen_details(
         .show(ui, |ui| {
             // ID (read-only)
             ui.label(RichText::new("ID:").color(ThemeColors::TEXT_SECONDARY));
-            ui.label(RichText::new(&screen.id).color(ThemeColors::TEXT_MUTED).small());
+            ui.label(
+                RichText::new(&screen.id)
+                    .color(ThemeColors::TEXT_MUTED)
+                    .small(),
+            );
             ui.end_row();
 
             // Enabled toggle
@@ -499,7 +562,10 @@ fn render_screen_details(
             // Priority
             ui.label(RichText::new("Priority:").color(ThemeColors::TEXT_SECONDARY));
             let mut priority = screen.priority as i32;
-            if ui.add(egui::DragValue::new(&mut priority).range(0..=100)).changed() {
+            if ui
+                .add(egui::DragValue::new(&mut priority).range(0..=100))
+                .changed()
+            {
                 update_screen_field(shared_state, screen_id, |s| s.priority = priority as u32);
                 view_state.screens_dirty = true;
             }
@@ -514,12 +580,26 @@ fn render_screen_details(
                     ScreenMatchMode::FullScreenshot => "Full Screenshot",
                 })
                 .show_ui(ui, |ui| {
-                    if ui.selectable_value(&mut match_mode, ScreenMatchMode::Anchors, "Anchors").changed() {
-                        update_screen_field(shared_state, screen_id, |s| s.match_mode = match_mode.clone());
+                    if ui
+                        .selectable_value(&mut match_mode, ScreenMatchMode::Anchors, "Anchors")
+                        .changed()
+                    {
+                        update_screen_field(shared_state, screen_id, |s| {
+                            s.match_mode = match_mode.clone()
+                        });
                         view_state.screens_dirty = true;
                     }
-                    if ui.selectable_value(&mut match_mode, ScreenMatchMode::FullScreenshot, "Full Screenshot").changed() {
-                        update_screen_field(shared_state, screen_id, |s| s.match_mode = match_mode.clone());
+                    if ui
+                        .selectable_value(
+                            &mut match_mode,
+                            ScreenMatchMode::FullScreenshot,
+                            "Full Screenshot",
+                        )
+                        .changed()
+                    {
+                        update_screen_field(shared_state, screen_id, |s| {
+                            s.match_mode = match_mode.clone()
+                        });
                         view_state.screens_dirty = true;
                     }
                 });
@@ -532,18 +612,30 @@ fn render_screen_details(
 
     // Anchors section
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Anchors").color(ThemeColors::TEXT_PRIMARY).strong());
-        ui.label(RichText::new(format!("({})", screen.anchors.len())).color(ThemeColors::TEXT_MUTED));
+        ui.label(
+            RichText::new("Anchors")
+                .color(ThemeColors::TEXT_PRIMARY)
+                .strong(),
+        );
+        ui.label(
+            RichText::new(format!("({})", screen.anchors.len())).color(ThemeColors::TEXT_MUTED),
+        );
     });
 
     ui.add_space(4.0);
 
     if screen.anchors.is_empty() {
-        ui.label(RichText::new("No anchors defined").color(ThemeColors::TEXT_MUTED).italics());
+        ui.label(
+            RichText::new("No anchors defined")
+                .color(ThemeColors::TEXT_MUTED)
+                .italics(),
+        );
     } else {
         let mut anchor_to_delete: Option<String> = None;
         for anchor in &screen.anchors {
-            if let Some(id) = render_anchor_item_with_controls(ui, anchor, screen_id, view_state, shared_state) {
+            if let Some(id) =
+                render_anchor_item_with_controls(ui, anchor, screen_id, view_state, shared_state)
+            {
                 anchor_to_delete = Some(id);
             }
         }
@@ -551,7 +643,11 @@ fn render_screen_details(
         if let Some(anchor_id) = anchor_to_delete {
             let mut shared = shared_state.write();
             let active_id = shared.active_profile_id.clone();
-            if let Some(profile) = shared.profiles.iter_mut().find(|p| active_id.as_ref() == Some(&p.id)) {
+            if let Some(profile) = shared
+                .profiles
+                .iter_mut()
+                .find(|p| active_id.as_ref() == Some(&p.id))
+            {
                 if let Some(screen) = profile.screens.iter_mut().find(|s| s.id == screen_id) {
                     screen.anchors.retain(|a| a.id != anchor_id);
                     view_state.screens_dirty = true;
@@ -576,13 +672,23 @@ fn render_screen_details(
 
     // Zone overrides section
     if !screen.ocr_zone_overrides.is_empty() {
-        ui.label(RichText::new("Zone Overrides").color(ThemeColors::TEXT_PRIMARY).strong());
+        ui.label(
+            RichText::new("Zone Overrides")
+                .color(ThemeColors::TEXT_PRIMARY)
+                .strong(),
+        );
         ui.add_space(4.0);
         for override_item in &screen.ocr_zone_overrides {
             ui.horizontal(|ui| {
-                let status = if override_item.enabled { "Enable" } else { "Disable" };
-                ui.label(RichText::new(format!("{}: {}", status, override_item.zone_id))
-                    .color(ThemeColors::TEXT_SECONDARY));
+                let status = if override_item.enabled {
+                    "Enable"
+                } else {
+                    "Disable"
+                };
+                ui.label(
+                    RichText::new(format!("{}: {}", status, override_item.zone_id))
+                        .color(ThemeColors::TEXT_SECONDARY),
+                );
             });
         }
     }
@@ -591,7 +697,10 @@ fn render_screen_details(
 
     // Delete button
     ui.horizontal(|ui| {
-        if ui.button(RichText::new("Delete Screen").color(ThemeColors::ACCENT_ERROR)).clicked() {
+        if ui
+            .button(RichText::new("Delete Screen").color(ThemeColors::ACCENT_ERROR))
+            .clicked()
+        {
             view_state.show_delete_confirm = true;
         }
     });
@@ -604,7 +713,11 @@ where
 {
     let mut shared = shared_state.write();
     let active_id = shared.active_profile_id.clone();
-    if let Some(profile) = shared.profiles.iter_mut().find(|p| active_id.as_ref() == Some(&p.id)) {
+    if let Some(profile) = shared
+        .profiles
+        .iter_mut()
+        .find(|p| active_id.as_ref() == Some(&p.id))
+    {
         if let Some(screen) = profile.screens.iter_mut().find(|s| s.id == screen_id) {
             update(screen);
         }
@@ -637,7 +750,11 @@ fn render_anchor_item_with_controls(
         if ui.checkbox(&mut required, "Required").changed() {
             let mut shared = shared_state.write();
             let active_id = shared.active_profile_id.clone();
-            if let Some(profile) = shared.profiles.iter_mut().find(|p| active_id.as_ref() == Some(&p.id)) {
+            if let Some(profile) = shared
+                .profiles
+                .iter_mut()
+                .find(|p| active_id.as_ref() == Some(&p.id))
+            {
                 if let Some(screen) = profile.screens.iter_mut().find(|s| s.id == screen_id) {
                     if let Some(a) = screen.anchors.iter_mut().find(|a| a.id == anchor.id) {
                         a.required = required;
@@ -650,14 +767,20 @@ fn render_anchor_item_with_controls(
         // Show expected text for text anchors
         if anchor.anchor_type == AnchorType::Text {
             if let Some(ref expected) = anchor.expected_text {
-                ui.label(RichText::new(format!("\"{}\"", expected))
-                    .color(ThemeColors::TEXT_SECONDARY)
-                    .italics());
+                ui.label(
+                    RichText::new(format!("\"{}\"", expected))
+                        .color(ThemeColors::TEXT_SECONDARY)
+                        .italics(),
+                );
             }
         }
 
         // Delete button
-        if ui.small_button("X").on_hover_text("Delete anchor").clicked() {
+        if ui
+            .small_button("X")
+            .on_hover_text("Delete anchor")
+            .clicked()
+        {
             delete_clicked = true;
         }
     });
@@ -685,9 +808,11 @@ fn render_anchor_item(ui: &mut egui::Ui, anchor: &ScreenAnchor) {
 
         if anchor.anchor_type == AnchorType::Text {
             if let Some(ref expected) = anchor.expected_text {
-                ui.label(RichText::new(format!("\"{}\"", expected))
-                    .color(ThemeColors::TEXT_SECONDARY)
-                    .italics());
+                ui.label(
+                    RichText::new(format!("\"{}\"", expected))
+                        .color(ThemeColors::TEXT_SECONDARY)
+                        .italics(),
+                );
             }
         }
     });
@@ -741,10 +866,13 @@ fn render_add_screen_dialog(
 
                 if ui.button("Create").clicked() && !view_state.new_screen_name.is_empty() {
                     let new_screen = ScreenDefinition {
-                        id: format!("screen_{}", std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
-                            .as_millis()),
+                        id: format!(
+                            "screen_{}",
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap()
+                                .as_millis()
+                        ),
                         name: view_state.new_screen_name.clone(),
                         parent_id: view_state.new_screen_parent_id.clone(),
                         match_mode: view_state.new_screen_match_mode.clone(),
@@ -760,7 +888,9 @@ fn render_add_screen_dialog(
 
                     let mut shared = shared_state.write();
                     let active_id = shared.active_profile_id.clone();
-                    if let Some(profile) = shared.profiles.iter_mut()
+                    if let Some(profile) = shared
+                        .profiles
+                        .iter_mut()
                         .find(|p| active_id.as_ref() == Some(&p.id))
                     {
                         profile.screens.push(new_screen.clone());
@@ -783,10 +913,14 @@ fn render_delete_confirm_dialog(
 ) {
     let screen_name = {
         let shared = shared_state.read();
-        view_state.selected_screen_id.as_ref()
-            .and_then(|id| shared.active_profile())
+        view_state
+            .selected_screen_id
+            .as_ref()
+            .and_then(|_id| shared.active_profile())
             .and_then(|p| {
-                view_state.selected_screen_id.as_ref()
+                view_state
+                    .selected_screen_id
+                    .as_ref()
                     .and_then(|id| p.screens.iter().find(|s| &s.id == id))
             })
             .map(|s| s.name.clone())
@@ -798,13 +932,19 @@ fn render_delete_confirm_dialog(
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ui.ctx(), |ui| {
-            ui.label(format!("Are you sure you want to delete \"{}\"?", screen_name));
+            ui.label(format!(
+                "Are you sure you want to delete \"{}\"?",
+                screen_name
+            ));
             ui.add_space(4.0);
-            ui.label(RichText::new("This will also delete all anchors for this screen.")
-                .color(ThemeColors::ACCENT_WARNING));
+            ui.label(
+                RichText::new("This will also delete all anchors for this screen.")
+                    .color(ThemeColors::ACCENT_WARNING),
+            );
             ui.add_space(4.0);
-            ui.label(RichText::new("This action cannot be undone.")
-                .color(ThemeColors::ACCENT_ERROR));
+            ui.label(
+                RichText::new("This action cannot be undone.").color(ThemeColors::ACCENT_ERROR),
+            );
 
             ui.add_space(16.0);
 
@@ -813,14 +953,19 @@ fn render_delete_confirm_dialog(
                     view_state.show_delete_confirm = false;
                 }
 
-                if ui.add(
-                    egui::Button::new(RichText::new("Delete").color(egui::Color32::WHITE))
-                        .fill(ThemeColors::ACCENT_ERROR)
-                ).clicked() {
+                if ui
+                    .add(
+                        egui::Button::new(RichText::new("Delete").color(egui::Color32::WHITE))
+                            .fill(ThemeColors::ACCENT_ERROR),
+                    )
+                    .clicked()
+                {
                     if let Some(screen_id) = view_state.selected_screen_id.take() {
                         let mut shared = shared_state.write();
                         let active_id = shared.active_profile_id.clone();
-                        if let Some(profile) = shared.profiles.iter_mut()
+                        if let Some(profile) = shared
+                            .profiles
+                            .iter_mut()
                             .find(|p| active_id.as_ref() == Some(&p.id))
                         {
                             profile.screens.retain(|s| s.id != screen_id);
@@ -839,7 +984,8 @@ fn render_text_anchor_dialog(
     view_state: &mut ScreensViewState,
     shared_state: &Arc<RwLock<SharedAppState>>,
 ) {
-    let Some((screen_id, detected_text, bounds)) = view_state.pending_text_for_anchor.clone() else {
+    let Some((screen_id, detected_text, bounds)) = view_state.pending_text_for_anchor.clone()
+    else {
         return;
     };
 
@@ -853,19 +999,22 @@ fn render_text_anchor_dialog(
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ui.ctx(), |ui| {
-            ui.label(RichText::new("Text detected in selected region:")
-                .color(ThemeColors::TEXT_SECONDARY));
+            ui.label(
+                RichText::new("Text detected in selected region:")
+                    .color(ThemeColors::TEXT_SECONDARY),
+            );
             ui.add_space(4.0);
 
             // Show detected text for reference
-            ui.label(RichText::new(format!("Detected: \"{}\"", detected_text))
-                .color(ThemeColors::TEXT_MUTED)
-                .italics());
+            ui.label(
+                RichText::new(format!("Detected: \"{}\"", detected_text))
+                    .color(ThemeColors::TEXT_MUTED)
+                    .italics(),
+            );
 
             ui.add_space(8.0);
 
-            ui.label(RichText::new("Expected text (editable):")
-                .color(ThemeColors::TEXT_SECONDARY));
+            ui.label(RichText::new("Expected text (editable):").color(ThemeColors::TEXT_SECONDARY));
             ui.text_edit_singleline(&mut view_state.editing_text_anchor_text);
 
             ui.add_space(16.0);
@@ -881,10 +1030,13 @@ fn render_text_anchor_dialog(
                     if ui.button("Create Anchor").clicked() {
                         // Create the text anchor
                         let new_anchor = ScreenAnchor {
-                            id: format!("anchor_{}", std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap()
-                                .as_millis()),
+                            id: format!(
+                                "anchor_{}",
+                                std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_millis()
+                            ),
                             anchor_type: AnchorType::Text,
                             bounds,
                             template_data: None,
@@ -896,11 +1048,13 @@ fn render_text_anchor_dialog(
                         // Add to screen
                         let mut shared = shared_state.write();
                         let active_id = shared.active_profile_id.clone();
-                        if let Some(profile) = shared.profiles.iter_mut()
+                        if let Some(profile) = shared
+                            .profiles
+                            .iter_mut()
                             .find(|p| active_id.as_ref() == Some(&p.id))
                         {
-                            if let Some(screen) = profile.screens.iter_mut()
-                                .find(|s| s.id == screen_id)
+                            if let Some(screen) =
+                                profile.screens.iter_mut().find(|s| s.id == screen_id)
                             {
                                 screen.anchors.push(new_anchor);
                                 view_state.screens_dirty = true;

@@ -3,17 +3,17 @@
 //! A read-only screen parsing tool that provides contextual gameplay tips
 //! without interacting with game memory or inputs.
 
-mod capture;
-mod vision;
 mod analysis;
-mod overlay;
-mod storage;
+mod app;
+mod capture;
 mod config;
-mod shared;
 mod dashboard;
 mod hotkey;
-mod app;
 mod mcp;
+mod overlay;
+mod shared;
+mod storage;
+mod vision;
 
 use anyhow::Result;
 use clap::Parser;
@@ -141,7 +141,11 @@ fn load_or_create_config() -> AppConfig {
 }
 
 /// Run in overlay-only mode
-fn run_overlay_only(monitor: usize, shared_state: Arc<RwLock<SharedAppState>>, custom_test_msg: Option<String>) -> Result<()> {
+fn run_overlay_only(
+    monitor: usize,
+    shared_state: Arc<RwLock<SharedAppState>>,
+    custom_test_msg: Option<String>,
+) -> Result<()> {
     info!("Running in overlay-only mode");
 
     // Configure overlay for selected monitor
@@ -167,7 +171,7 @@ fn run_overlay_only(monitor: usize, shared_state: Arc<RwLock<SharedAppState>>, c
     let tip_sender = manager.tip_sender();
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(2));
-        
+
         if let Some(msg) = custom_test_msg {
             let _ = tip_sender.send(Tip {
                 id: "custom_test_msg".to_string(),

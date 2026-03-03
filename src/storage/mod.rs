@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Storage Layer
 //!
 //! Handles persistence of profiles, settings, and logs using SQLite.

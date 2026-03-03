@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Visual element detection module
 //!
 //! Template matching and pattern recognition for HUD elements, icons, etc.
@@ -8,7 +9,7 @@ use image::{GrayImage, Luma};
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Instant;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Template for matching visual elements
 #[derive(Debug, Clone)]
@@ -30,7 +31,13 @@ pub struct Template {
 
 impl Template {
     /// Create a new template from RGBA image data
-    pub fn from_rgba(id: &str, data: &[u8], width: u32, height: u32, threshold: f32) -> Result<Self> {
+    pub fn from_rgba(
+        id: &str,
+        data: &[u8],
+        width: u32,
+        height: u32,
+        threshold: f32,
+    ) -> Result<Self> {
         let img = image::RgbaImage::from_raw(width, height, data.to_vec())
             .context("Failed to create image from RGBA data")?;
 
@@ -48,7 +55,13 @@ impl Template {
     }
 
     /// Create a new template from BGRA image data (common for screen captures)
-    pub fn from_bgra(id: &str, data: &[u8], width: u32, height: u32, threshold: f32) -> Result<Self> {
+    pub fn from_bgra(
+        id: &str,
+        data: &[u8],
+        width: u32,
+        height: u32,
+        threshold: f32,
+    ) -> Result<Self> {
         // Convert BGRA to RGBA
         let mut rgba_data = data.to_vec();
         for chunk in rgba_data.chunks_mut(4) {
@@ -159,7 +172,10 @@ impl TemplateMatcher {
 
     /// Add a template to match against
     pub fn add_template(&mut self, template: Template) {
-        info!("Added template '{}' ({}x{})", template.id, template.width, template.height);
+        info!(
+            "Added template '{}' ({}x{})",
+            template.id, template.width, template.height
+        );
         self.templates.insert(template.id.clone(), template);
     }
 
@@ -219,7 +235,8 @@ impl TemplateMatcher {
             if self.config.multi_scale {
                 // Multi-scale matching
                 for &scale in &self.config.scales {
-                    let matches = self.match_template_at_scale(&grayscale, template, scale, threshold)?;
+                    let matches =
+                        self.match_template_at_scale(&grayscale, template, scale, threshold)?;
                     all_matches.extend(matches);
                 }
             } else {
@@ -240,10 +257,13 @@ impl TemplateMatcher {
 
         // Cache results
         if self.config.enable_cache {
-            self.cache.insert(cache_key, CachedResult {
-                matches: all_matches.clone(),
-                timestamp: Instant::now(),
-            });
+            self.cache.insert(
+                cache_key,
+                CachedResult {
+                    matches: all_matches.clone(),
+                    timestamp: Instant::now(),
+                },
+            );
         }
 
         Ok(all_matches)
@@ -269,9 +289,8 @@ impl TemplateMatcher {
         // Normalized cross-correlation
         for y in 0..=(img_h - tmpl_h) {
             for x in 0..=(img_w - tmpl_w) {
-                let score = normalized_cross_correlation(
-                    image, template_img, x, y, template.mask.as_ref()
-                );
+                let score =
+                    normalized_cross_correlation(image, template_img, x, y, template.mask.as_ref());
 
                 if score >= threshold {
                     matches.push(TemplateMatch {
@@ -361,17 +380,17 @@ impl TemplateMatcher {
 
         for m in matches {
             let dominated = result.iter().any(|existing: &TemplateMatch| {
-                existing.template_id == m.template_id &&
-                distance(existing.position, m.position) < min_dist &&
-                existing.confidence >= m.confidence
+                existing.template_id == m.template_id
+                    && distance(existing.position, m.position) < min_dist
+                    && existing.confidence >= m.confidence
             });
 
             if !dominated {
                 // Remove any existing matches that this one dominates
                 result.retain(|existing| {
-                    !(existing.template_id == m.template_id &&
-                      distance(existing.position, m.position) < min_dist &&
-                      m.confidence > existing.confidence)
+                    !(existing.template_id == m.template_id
+                        && distance(existing.position, m.position) < min_dist
+                        && m.confidence > existing.confidence)
                 });
                 result.push(m);
             }
@@ -468,11 +487,11 @@ fn normalized_cross_correlation(
 ) -> f32 {
     let (tmpl_w, tmpl_h) = template.dimensions();
 
-    let mut sum_it = 0.0f64;  // Sum of image * template
-    let mut sum_i2 = 0.0f64;  // Sum of image^2
-    let mut sum_t2 = 0.0f64;  // Sum of template^2
-    let mut sum_i = 0.0f64;   // Sum of image
-    let mut sum_t = 0.0f64;   // Sum of template
+    let mut sum_it = 0.0f64; // Sum of image * template
+    let mut sum_i2 = 0.0f64; // Sum of image^2
+    let mut sum_t2 = 0.0f64; // Sum of template^2
+    let mut sum_i = 0.0f64; // Sum of image
+    let mut sum_t = 0.0f64; // Sum of template
     let mut count = 0.0f64;
 
     for ty in 0..tmpl_h {
@@ -519,8 +538,8 @@ fn normalized_cross_correlation(
 
 /// Euclidean distance between two points
 fn distance(a: (u32, u32), b: (u32, u32)) -> u32 {
-    let dx = (a.0 as i32 - b.0 as i32).abs() as u32;
-    let dy = (a.1 as i32 - b.1 as i32).abs() as u32;
+    let dx = (a.0 as i32 - b.0 as i32).unsigned_abs();
+    let dy = (a.1 as i32 - b.1 as i32).unsigned_abs();
     ((dx * dx + dy * dy) as f32).sqrt() as u32
 }
 
@@ -532,10 +551,10 @@ mod tests {
     fn test_template_creation() {
         // Create a simple 2x2 template
         let data = vec![
-            255, 255, 255, 255,  // White pixel (RGBA)
-            0, 0, 0, 255,        // Black pixel
-            0, 0, 0, 255,        // Black pixel
-            255, 255, 255, 255,  // White pixel
+            255, 255, 255, 255, // White pixel (RGBA)
+            0, 0, 0, 255, // Black pixel
+            0, 0, 0, 255, // Black pixel
+            255, 255, 255, 255, // White pixel
         ];
 
         let template = Template::from_rgba("test", &data, 2, 2, 0.8);
@@ -556,9 +575,9 @@ mod tests {
     #[test]
     fn test_bgra_to_grayscale() {
         let data = vec![
-            255, 0, 0, 255,    // Blue
-            0, 255, 0, 255,    // Green
-            0, 0, 255, 255,    // Red
+            255, 0, 0, 255, // Blue
+            0, 255, 0, 255, // Green
+            0, 0, 255, 255, // Red
             128, 128, 128, 255, // Gray
         ];
 
@@ -568,21 +587,25 @@ mod tests {
         let blue_gray = gray.get_pixel(0, 0).0[0];
         let green_gray = gray.get_pixel(1, 0).0[0];
 
-        assert!(green_gray > blue_gray, "Green should be brighter than blue in grayscale");
+        assert!(
+            green_gray > blue_gray,
+            "Green should be brighter than blue in grayscale"
+        );
     }
 
     #[test]
     fn test_ncc_perfect_match() {
-        let img_data = vec![
-            100u8, 200, 100, 200,
-            200, 100, 200, 100,
-        ];
+        let img_data = vec![100u8, 200, 100, 200, 200, 100, 200, 100];
         let tmpl_data = vec![100u8, 200];
 
         let img = GrayImage::from_raw(4, 2, img_data).unwrap();
         let tmpl = GrayImage::from_raw(2, 1, tmpl_data).unwrap();
 
         let score = normalized_cross_correlation(&img, &tmpl, 0, 0, None);
-        assert!(score > 0.99, "Perfect match should have high score: {}", score);
+        assert!(
+            score > 0.99,
+            "Perfect match should have high score: {}",
+            score
+        );
     }
 }

@@ -67,7 +67,8 @@ pub fn add_scroll_slider<Num: egui::emath::Numeric>(
             let current = (*value).to_f64();
             // Scroll up (positive delta) increases value, scroll down decreases
             let direction = if scroll_delta > 0.0 { 1.0 } else { -1.0 };
-            let new_value = (current + direction * scroll_step).clamp(*range_f64.start(), *range_f64.end());
+            let new_value =
+                (current + direction * scroll_step).clamp(*range_f64.start(), *range_f64.end());
             *value = Num::from_f64(new_value);
             // Request repaint to update UI
             ui.ctx().request_repaint();

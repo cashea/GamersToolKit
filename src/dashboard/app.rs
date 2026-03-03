@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Dashboard application entry point
 
 use eframe::egui;
@@ -5,24 +6,23 @@ use parking_lot::{Mutex, RwLock};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::sync::mpsc::{self, Sender};
 
 use crate::analysis::Tip;
 use crate::capture::{CaptureTarget, ScreenCapture};
 use crate::config::WindowState;
 use crate::dashboard::components::render_sidebar;
+use crate::dashboard::state::ZoneOcrResult;
 use crate::dashboard::state::{AutoConfigureStep, DashboardState, DashboardView};
 use crate::dashboard::theme;
 use crate::dashboard::views::{
-    render_capture_view, render_home_view, render_overlay_view,
-    render_profiles_view, render_screens_view, render_settings_view, render_vision_view,
+    render_capture_view, render_home_view, render_overlay_view, render_profiles_view,
+    render_screens_view, render_settings_view, render_vision_view,
 };
 use crate::hotkey::HotkeyManager;
 use crate::overlay::{OverlayManager, ZoneSelectionResult};
 use crate::shared::SharedAppState;
-use crate::storage::profiles::{GameProfile, ContentType};
-use crate::dashboard::state::ZoneOcrResult;
-use crate::vision::{VisionPipeline, ModelManager, ModelType, OcrGranularity, ScreenRecognizer};
+use crate::storage::profiles::{ContentType, GameProfile};
+use crate::vision::{ModelManager, ModelType, ScreenRecognizer, VisionPipeline};
 use std::thread::JoinHandle;
 
 /// The main dashboard application
@@ -162,10 +162,10 @@ impl DashboardApp {
             }
         }
 
-        let mut dashboard_state = DashboardState::default();
-
-        // Restore persisted dashboard view
-        dashboard_state.current_view = DashboardView::from_setting(dashboard_settings.last_view);
+        let mut dashboard_state = DashboardState {
+            current_view: DashboardView::from_setting(dashboard_settings.last_view),
+            ..Default::default()
+        };
 
         // Restore persisted vision settings
         dashboard_state.vision.selected_backend = vision_settings.backend;
@@ -220,7 +220,10 @@ impl DashboardApp {
     fn load_profile_by_id(
         profiles_dir: &Option<PathBuf>,
         profile_id: Option<&str>,
-    ) -> (Option<GameProfile>, Vec<crate::storage::profiles::OcrRegion>) {
+    ) -> (
+        Option<GameProfile>,
+        Vec<crate::storage::profiles::OcrRegion>,
+    ) {
         let Some(ref dir) = profiles_dir else {
             return (None, vec![]);
         };
@@ -444,7 +447,7 @@ impl DashboardApp {
 
     /// Update capture FPS by polling for frames
     fn update_capture_stats(&mut self) {
-        let mut capture_guard = self.capture_manager.lock();
+        let capture_guard = self.capture_manager.lock();
         if let Some(ref capture) = *capture_guard {
             // Try to get frames without blocking to calculate FPS
             let mut latest_frame = None;
@@ -481,7 +484,11 @@ impl DashboardApp {
 
     /// Check if capture is running
     pub fn is_capturing(&self) -> bool {
-        self.capture_manager.lock().as_ref().map(|c| c.is_running()).unwrap_or(false)
+        self.capture_manager
+            .lock()
+            .as_ref()
+            .map(|c| c.is_running())
+            .unwrap_or(false)
     }
 
     /// Get the capture manager for external use
@@ -741,8 +748,12 @@ impl DashboardApp {
         let current_vision = crate::config::VisionSettings {
             backend: self.dashboard_state.vision.selected_backend,
             granularity: match self.dashboard_state.vision.ocr_granularity {
-                crate::dashboard::state::OcrGranularity::Word => crate::vision::OcrGranularity::Word,
-                crate::dashboard::state::OcrGranularity::Line => crate::vision::OcrGranularity::Line,
+                crate::dashboard::state::OcrGranularity::Word => {
+                    crate::vision::OcrGranularity::Word
+                }
+                crate::dashboard::state::OcrGranularity::Line => {
+                    crate::vision::OcrGranularity::Line
+                }
             },
             match_threshold: self.dashboard_state.vision.match_threshold,
             show_bounding_boxes: self.dashboard_state.vision.show_bounding_boxes,
@@ -851,8 +862,11 @@ impl eframe::App for DashboardApp {
         }
 
         // Request continuous repaint when capturing or when there are pending saves
-        if self.is_capturing() || self.pending_save || self.dashboard_state.vision.zones_dirty
-            || self.dashboard_state.screens.screens_dirty {
+        if self.is_capturing()
+            || self.pending_save
+            || self.dashboard_state.vision.zones_dirty
+            || self.dashboard_state.screens.screens_dirty
+        {
             ctx.request_repaint();
         }
 
@@ -867,63 +881,53 @@ impl eframe::App for DashboardApp {
         // Main content panel
         egui::CentralPanel::default().show(ctx, |ui| {
             // Add padding around content
-            egui::Frame::none()
-                .inner_margin(24.0)
-                .show(ui, |ui| {
-                    match self.dashboard_state.current_view {
-                        DashboardView::Home => {
-                            render_home_view(
-                                ui,
-                                &mut self.dashboard_state.home,
-                                &self.shared_state,
-                            );
-                        }
-                        DashboardView::Capture => {
-                            render_capture_view(
-                                ui,
-                                &mut self.dashboard_state.capture,
-                                &self.shared_state,
-                                &self.capture_manager,
-                            );
-                        }
-                        DashboardView::Overlay => {
-                            render_overlay_view(
-                                ui,
-                                &mut self.dashboard_state.overlay,
-                                &self.shared_state,
-                            );
-                        }
-                        DashboardView::Vision => {
-                            render_vision_view(
-                                ui,
-                                &mut self.dashboard_state.vision,
-                                &self.shared_state,
-                                &self.capture_manager,
-                            );
-                        }
-                        DashboardView::Screens => {
-                            render_screens_view(
-                                ui,
-                                &mut self.dashboard_state,
-                                &self.shared_state,
-                            );
-                        }
-                        DashboardView::Profiles => {
-                            render_profiles_view(
-                                ui,
-                                &mut self.dashboard_state.profiles,
-                                &self.shared_state,
-                            );
-                        }
-                        DashboardView::Settings => {
-                            render_settings_view(
-                                ui,
-                                &mut self.dashboard_state.settings,
-                                &self.shared_state,
-                            );
-                        }
+            egui::Frame::none().inner_margin(24.0).show(ui, |ui| {
+                match self.dashboard_state.current_view {
+                    DashboardView::Home => {
+                        render_home_view(ui, &mut self.dashboard_state.home, &self.shared_state);
                     }
-                });
+                    DashboardView::Capture => {
+                        render_capture_view(
+                            ui,
+                            &mut self.dashboard_state.capture,
+                            &self.shared_state,
+                            &self.capture_manager,
+                        );
+                    }
+                    DashboardView::Overlay => {
+                        render_overlay_view(
+                            ui,
+                            &mut self.dashboard_state.overlay,
+                            &self.shared_state,
+                        );
+                    }
+                    DashboardView::Vision => {
+                        render_vision_view(
+                            ui,
+                            &mut self.dashboard_state.vision,
+                            &self.shared_state,
+                            &self.capture_manager,
+                        );
+                    }
+                    DashboardView::Screens => {
+                        render_screens_view(ui, &mut self.dashboard_state, &self.shared_state);
+                    }
+                    DashboardView::Profiles => {
+                        render_profiles_view(
+                            ui,
+                            &mut self.dashboard_state.profiles,
+                            &self.shared_state,
+                        );
+                    }
+                    DashboardView::Settings => {
+                        render_settings_view(
+                            ui,
+                            &mut self.dashboard_state.settings,
+                            &self.shared_state,
+                        );
+                    }
+                }
+            });
         });
     }
 
@@ -1049,7 +1053,9 @@ impl DashboardApp {
                     // Save profile to disk
                     if let Some(ref profiles_dir) = self.profiles_dir {
                         let profile_path = profiles_dir.join(format!("{}.json", profile.id));
-                        if let Err(e) = crate::storage::profiles::save_profile(&profile, &profile_path) {
+                        if let Err(e) =
+                            crate::storage::profiles::save_profile(&profile, &profile_path)
+                        {
                             tracing::error!("Failed to save new profile '{}': {}", profile.name, e);
                         } else {
                             tracing::info!("Created and saved profile '{}' to disk", profile.name);
@@ -1067,8 +1073,14 @@ impl DashboardApp {
                     }
                     // Delete from disk
                     if let Some(ref profiles_dir) = self.profiles_dir {
-                        if let Err(e) = crate::storage::profiles::delete_profile(profiles_dir, &profile_id) {
-                            tracing::error!("Failed to delete profile '{}' from disk: {}", profile_id, e);
+                        if let Err(e) =
+                            crate::storage::profiles::delete_profile(profiles_dir, &profile_id)
+                        {
+                            tracing::error!(
+                                "Failed to delete profile '{}' from disk: {}",
+                                profile_id,
+                                e
+                            );
                         } else {
                             tracing::info!("Deleted profile '{}' from disk", profile_id);
                         }
@@ -1120,7 +1132,9 @@ impl DashboardApp {
                 if let Err(e) = self.start_overlay() {
                     tracing::error!("Failed to start overlay for test tip: {}", e);
                     let mut state = self.shared_state.write();
-                    state.runtime.set_error(format!("Failed to start overlay: {}", e));
+                    state
+                        .runtime
+                        .set_error(format!("Failed to start overlay: {}", e));
                     return;
                 }
                 // Small sleep to ensure the overlay thread has initialized before sending tips
@@ -1147,10 +1161,13 @@ impl DashboardApp {
 
                 if candidate_screens.is_empty() {
                     let tip = Tip {
-                        id: format!("test_{}", std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_millis()),
+                        id: format!(
+                            "test_{}",
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis()
+                        ),
                         message: base_msg,
                         priority,
                         duration_ms: Some(5000),
@@ -1160,10 +1177,14 @@ impl DashboardApp {
                 } else {
                     for (i, screen_name) in candidate_screens.iter().enumerate() {
                         let tip = Tip {
-                            id: format!("test_{}_{}", i, std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis()),
+                            id: format!(
+                                "test_{}_{}",
+                                i,
+                                std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis()
+                            ),
                             message: format!("[{}]: {}", screen_name, base_msg),
                             priority,
                             duration_ms: Some(5000),
@@ -1219,14 +1240,17 @@ impl DashboardApp {
         // Update model status from model manager (for PaddleOCR)
         if let Some(ref manager) = self.model_manager {
             vision_state.detection_model_ready = manager.is_model_available(ModelType::Detection);
-            vision_state.recognition_model_ready = manager.is_model_available(ModelType::Recognition);
+            vision_state.recognition_model_ready =
+                manager.is_model_available(ModelType::Recognition);
             vision_state.models_ready = manager.are_models_ready();
         }
 
         // Update OCR initialized status based on backend
         if let Some(ref pipeline) = self.vision_pipeline {
-            vision_state.ocr_initialized = pipeline.is_ocr_ready() && pipeline.backend() == OcrBackend::PaddleOcr;
-            vision_state.windows_ocr_initialized = pipeline.is_ocr_ready() && pipeline.backend() == OcrBackend::WindowsOcr;
+            vision_state.ocr_initialized =
+                pipeline.is_ocr_ready() && pipeline.backend() == OcrBackend::PaddleOcr;
+            vision_state.windows_ocr_initialized =
+                pipeline.is_ocr_ready() && pipeline.backend() == OcrBackend::WindowsOcr;
         } else {
             vision_state.ocr_initialized = false;
             vision_state.windows_ocr_initialized = false;
@@ -1275,7 +1299,7 @@ impl DashboardApp {
                         tracing::error!("Failed to create vision pipeline: {}", e);
                         return;
                     }
-                }
+                },
             };
 
             // Set the backend
@@ -1331,7 +1355,9 @@ impl DashboardApp {
                 }
 
                 // Send existing zones to overlay for display
-                let existing_zones: Vec<(String, (f32, f32, f32, f32))> = self.dashboard_state.vision
+                let existing_zones: Vec<(String, (f32, f32, f32, f32))> = self
+                    .dashboard_state
+                    .vision
                     .ocr_zones
                     .iter()
                     .map(|z| (z.name.clone(), z.bounds))
@@ -1351,7 +1377,10 @@ impl DashboardApp {
                 manager.enter_zone_selection_mode(existing_zones, capture_size);
                 self.dashboard_state.vision.zone_selection.is_selecting = true;
                 self.dashboard_state.vision.zone_selection_error = None;
-                tracing::info!("Requested zone selection mode with capture_size: {:?}", capture_size);
+                tracing::info!(
+                    "Requested zone selection mode with capture_size: {:?}",
+                    capture_size
+                );
             } else {
                 tracing::warn!("Cannot enter zone selection mode: overlay not running");
                 self.dashboard_state.vision.zone_selection_error =
@@ -1400,18 +1429,21 @@ impl DashboardApp {
                 // Get existing anchors for display
                 let existing_anchors: Vec<(String, (f32, f32, f32, f32))> = {
                     let shared = self.shared_state.read();
-                    shared.active_profile()
+                    shared
+                        .active_profile()
                         .and_then(|p| p.screens.iter().find(|s| s.id == screen_id))
-                        .map(|s| s.anchors.iter()
-                            .map(|a| (a.id.clone(), a.bounds))
-                            .collect())
+                        .map(|s| s.anchors.iter().map(|a| (a.id.clone(), a.bounds)).collect())
                         .unwrap_or_default()
                 };
 
                 let capture_size = {
                     let w = self.dashboard_state.vision.last_frame_width;
                     let h = self.dashboard_state.vision.last_frame_height;
-                    if w > 0 && h > 0 { Some((w, h)) } else { None }
+                    if w > 0 && h > 0 {
+                        Some((w, h))
+                    } else {
+                        None
+                    }
                 };
 
                 manager.enter_visual_anchor_mode(screen_id, existing_anchors, capture_size);
@@ -1423,7 +1455,12 @@ impl DashboardApp {
         }
 
         // Handle request to enter text anchor capture mode
-        if let Some(screen_id) = self.dashboard_state.screens.pending_text_anchor_capture.clone() {
+        if let Some(screen_id) = self
+            .dashboard_state
+            .screens
+            .pending_text_anchor_capture
+            .clone()
+        {
             self.dashboard_state.screens.pending_text_anchor_capture = None;
 
             // Auto-start capture if not running (needed to get frame data for anchor)
@@ -1463,18 +1500,21 @@ impl DashboardApp {
                 // Get existing anchors for display
                 let existing_anchors: Vec<(String, (f32, f32, f32, f32))> = {
                     let shared = self.shared_state.read();
-                    shared.active_profile()
+                    shared
+                        .active_profile()
                         .and_then(|p| p.screens.iter().find(|s| s.id == screen_id))
-                        .map(|s| s.anchors.iter()
-                            .map(|a| (a.id.clone(), a.bounds))
-                            .collect())
+                        .map(|s| s.anchors.iter().map(|a| (a.id.clone(), a.bounds)).collect())
                         .unwrap_or_default()
                 };
 
                 let capture_size = {
                     let w = self.dashboard_state.vision.last_frame_width;
                     let h = self.dashboard_state.vision.last_frame_height;
-                    if w > 0 && h > 0 { Some((w, h)) } else { None }
+                    if w > 0 && h > 0 {
+                        Some((w, h))
+                    } else {
+                        None
+                    }
                 };
 
                 manager.enter_text_anchor_mode(screen_id, existing_anchors, capture_size);
@@ -1573,12 +1613,23 @@ impl DashboardApp {
                                 let ph = (bounds.3 * height as f32) as u32;
 
                                 // Extract region and encode as PNG
-                                if let Some(png_data) = extract_region_as_png(&frame.data, width, height, px, py, pw, ph) {
+                                if let Some(png_data) = extract_region_as_png(
+                                    &frame.data,
+                                    width,
+                                    height,
+                                    px,
+                                    py,
+                                    pw,
+                                    ph,
+                                ) {
                                     let new_anchor = crate::storage::profiles::ScreenAnchor {
-                                        id: format!("anchor_{}", std::time::SystemTime::now()
-                                            .duration_since(std::time::UNIX_EPOCH)
-                                            .unwrap()
-                                            .as_millis()),
+                                        id: format!(
+                                            "anchor_{}",
+                                            std::time::SystemTime::now()
+                                                .duration_since(std::time::UNIX_EPOCH)
+                                                .unwrap()
+                                                .as_millis()
+                                        ),
                                         anchor_type: crate::storage::profiles::AnchorType::Visual,
                                         bounds,
                                         template_data: Some(png_data),
@@ -1590,14 +1641,19 @@ impl DashboardApp {
                                     // Add to screen
                                     let mut shared = self.shared_state.write();
                                     let active_id = shared.active_profile_id.clone();
-                                    if let Some(profile) = shared.profiles.iter_mut()
+                                    if let Some(profile) = shared
+                                        .profiles
+                                        .iter_mut()
                                         .find(|p| active_id.as_ref() == Some(&p.id))
                                     {
-                                        if let Some(screen) = profile.screens.iter_mut()
-                                            .find(|s| s.id == screen_id)
+                                        if let Some(screen) =
+                                            profile.screens.iter_mut().find(|s| s.id == screen_id)
                                         {
                                             screen.anchors.push(new_anchor);
-                                            tracing::info!("Added visual anchor to screen {}", screen_id);
+                                            tracing::info!(
+                                                "Added visual anchor to screen {}",
+                                                screen_id
+                                            );
                                         }
                                     }
                                 } else {
@@ -1608,8 +1664,10 @@ impl DashboardApp {
                             }
                         } else {
                             tracing::warn!("No frame available for visual anchor capture");
-                            self.dashboard_state.screens.error_message =
-                                Some("No capture frame available. Make sure capture is running.".to_string());
+                            self.dashboard_state.screens.error_message = Some(
+                                "No capture frame available. Make sure capture is running."
+                                    .to_string(),
+                            );
                         }
 
                         self.dashboard_state.screens.pending_anchor_capture = None;
@@ -1645,9 +1703,15 @@ impl DashboardApp {
                             pipeline.set_backend(selected_backend);
                             if !pipeline.is_ocr_ready() {
                                 if let Err(e) = pipeline.init_ocr() {
-                                    tracing::error!("Failed to initialize OCR for text anchor: {}", e);
+                                    tracing::error!(
+                                        "Failed to initialize OCR for text anchor: {}",
+                                        e
+                                    );
                                 } else {
-                                    tracing::info!("Initialized {:?} OCR for text anchor", selected_backend);
+                                    tracing::info!(
+                                        "Initialized {:?} OCR for text anchor",
+                                        selected_backend
+                                    );
                                 }
                             }
                         }
@@ -1675,7 +1739,13 @@ impl DashboardApp {
                                     let pw = (bounds.2 * width as f32) as u32;
                                     let ph = (bounds.3 * height as f32) as u32;
 
-                                    tracing::info!("Running OCR on region: {}x{} at ({}, {})", pw, ph, px, py);
+                                    tracing::info!(
+                                        "Running OCR on region: {}x{} at ({}, {})",
+                                        pw,
+                                        ph,
+                                        px,
+                                        py
+                                    );
 
                                     // Try to run OCR on the region
                                     if let Some(ref mut pipeline) = self.vision_pipeline {
@@ -1683,9 +1753,14 @@ impl DashboardApp {
                                             &frame, px, py, pw, ph, None,
                                         ) {
                                             Ok(result) => {
-                                                tracing::info!("OCR returned {} text regions", result.text_regions.len());
+                                                tracing::info!(
+                                                    "OCR returned {} text regions",
+                                                    result.text_regions.len()
+                                                );
                                                 // Combine all detected text
-                                                let text: String = result.text_regions.iter()
+                                                let text: String = result
+                                                    .text_regions
+                                                    .iter()
                                                     .map(|r| r.text.as_str())
                                                     .collect::<Vec<_>>()
                                                     .join(" ");
@@ -1703,7 +1778,9 @@ impl DashboardApp {
                                             }
                                         }
                                     } else {
-                                        tracing::warn!("Vision pipeline not available for text anchor OCR");
+                                        tracing::warn!(
+                                            "Vision pipeline not available for text anchor OCR"
+                                        );
                                         None
                                     }
                                 } else {
@@ -1717,18 +1794,20 @@ impl DashboardApp {
                         };
 
                         // Store for dialog (show even if OCR failed - user can enter text manually)
-                        let text = detected_text.unwrap_or_else(|| "(no text detected)".to_string());
-                        self.dashboard_state.screens.pending_text_for_anchor = Some((screen_id.clone(), text, bounds));
-                        self.dashboard_state.screens.editing_text_anchor_text.clear();
+                        let text =
+                            detected_text.unwrap_or_else(|| "(no text detected)".to_string());
+                        self.dashboard_state.screens.pending_text_for_anchor =
+                            Some((screen_id.clone(), text, bounds));
+                        self.dashboard_state
+                            .screens
+                            .editing_text_anchor_text
+                            .clear();
 
                         self.dashboard_state.screens.pending_text_anchor_capture = None;
                     }
                     ZoneSelectionResult::FullScreenCaptured { screen_id } => {
                         // Handle full screen template capture
-                        tracing::info!(
-                            "Full screen template captured for screen {}",
-                            screen_id
-                        );
+                        tracing::info!("Full screen template captured for screen {}", screen_id);
                         // TODO: Store current frame as template for screen definition
                         self.dashboard_state.screens.pending_full_capture = false;
                         self.dashboard_state.screens.screens_dirty = true;
@@ -1853,13 +1932,21 @@ impl DashboardApp {
             }
 
             // Get preprocessing settings: use zone's custom settings if available, otherwise global
-            let preprocessing = zone.preprocessing.as_ref()
+            let preprocessing = zone
+                .preprocessing
+                .as_ref()
                 .or(Some(&vision_state.preprocessing))
                 .filter(|pp| pp.enabled);
 
             tracing::info!(
                 "Zone '{}': processing region ({}, {}) {}x{} (frame: {}x{})",
-                zone.name, x, y, w, h, frame_width, frame_height
+                zone.name,
+                x,
+                y,
+                w,
+                h,
+                frame_width,
+                frame_height
             );
 
             // Run OCR on the zone region with preprocessing
@@ -1910,7 +1997,13 @@ impl DashboardApp {
         use crate::vision::OcrBackend;
 
         // Check if auto-configure is active
-        let auto_config = match self.dashboard_state.vision.zone_selection.auto_configure.as_mut() {
+        let auto_config = match self
+            .dashboard_state
+            .vision
+            .zone_selection
+            .auto_configure
+            .as_mut()
+        {
             Some(ac) if ac.current_step != AutoConfigureStep::Completed => ac,
             _ => return,
         };
@@ -1921,7 +2014,8 @@ impl DashboardApp {
         let zone = match self.dashboard_state.vision.ocr_zones.get(zone_idx) {
             Some(z) => z.clone(),
             None => {
-                if let Some(ref mut ac) = self.dashboard_state.vision.zone_selection.auto_configure {
+                if let Some(ref mut ac) = self.dashboard_state.vision.zone_selection.auto_configure
+                {
                     ac.current_step = AutoConfigureStep::Completed;
                     ac.error_message = Some("Zone not found".to_string());
                 }
@@ -1943,7 +2037,9 @@ impl DashboardApp {
                 match VisionPipeline::new() {
                     Ok(p) => self.vision_pipeline = Some(p),
                     Err(e) => {
-                        if let Some(ref mut ac) = self.dashboard_state.vision.zone_selection.auto_configure {
+                        if let Some(ref mut ac) =
+                            self.dashboard_state.vision.zone_selection.auto_configure
+                        {
                             ac.current_step = AutoConfigureStep::Completed;
                             ac.error_message = Some(format!("Failed to create pipeline: {}", e));
                         }
@@ -1955,7 +2051,9 @@ impl DashboardApp {
             if let Some(ref mut pipeline) = self.vision_pipeline {
                 pipeline.set_backend(selected_backend);
                 if let Err(e) = pipeline.init_ocr() {
-                    if let Some(ref mut ac) = self.dashboard_state.vision.zone_selection.auto_configure {
+                    if let Some(ref mut ac) =
+                        self.dashboard_state.vision.zone_selection.auto_configure
+                    {
                         ac.current_step = AutoConfigureStep::Completed;
                         ac.error_message = Some(format!("Failed to init OCR: {}", e));
                     }
@@ -2026,7 +2124,13 @@ impl DashboardApp {
         }
 
         // Get current settings to test from auto_configure state
-        let ac = self.dashboard_state.vision.zone_selection.auto_configure.as_ref().unwrap();
+        let ac = self
+            .dashboard_state
+            .vision
+            .zone_selection
+            .auto_configure
+            .as_ref()
+            .unwrap();
         let test_preprocessing = if ac.current_preprocessing_enabled {
             Some(OcrPreprocessing {
                 enabled: true,
@@ -2051,7 +2155,11 @@ impl DashboardApp {
         let status = format!(
             "Testing: scale={}x, pp={}, gray={}, inv={}, contrast={:.1}",
             ac.current_scale,
-            if ac.current_preprocessing_enabled { "on" } else { "off" },
+            if ac.current_preprocessing_enabled {
+                "on"
+            } else {
+                "off"
+            },
             if ac.current_grayscale { "Y" } else { "N" },
             if ac.current_invert { "Y" } else { "N" },
             ac.current_contrast
@@ -2060,7 +2168,10 @@ impl DashboardApp {
         // Run OCR with current settings
         let result = pipeline.process_region_with_preprocessing(
             &frame,
-            x, y, w, h,
+            x,
+            y,
+            w,
+            h,
             test_preprocessing.as_ref(),
         );
 
@@ -2078,7 +2189,11 @@ impl DashboardApp {
                 let avg_confidence = if ocr_result.text_regions.is_empty() {
                     0.0
                 } else {
-                    ocr_result.text_regions.iter().map(|r| r.confidence).sum::<f32>()
+                    ocr_result
+                        .text_regions
+                        .iter()
+                        .map(|r| r.confidence)
+                        .sum::<f32>()
                         / ocr_result.text_regions.len() as f32
                 };
 
@@ -2086,7 +2201,13 @@ impl DashboardApp {
 
                 if !filtered_text.trim().is_empty() {
                     // Found text - check if this is better than our best so far
-                    let ac = self.dashboard_state.vision.zone_selection.auto_configure.as_mut().unwrap();
+                    let ac = self
+                        .dashboard_state
+                        .vision
+                        .zone_selection
+                        .auto_configure
+                        .as_mut()
+                        .unwrap();
 
                     if avg_confidence > ac.best_confidence {
                         tracing::info!(
@@ -2108,7 +2229,13 @@ impl DashboardApp {
         }
 
         // Advance to next configuration
-        let ac = self.dashboard_state.vision.zone_selection.auto_configure.as_mut().unwrap();
+        let ac = self
+            .dashboard_state
+            .vision
+            .zone_selection
+            .auto_configure
+            .as_mut()
+            .unwrap();
         ac.status_message = status;
         ac.current_step = AutoConfigureStep::Testing;
         ac.current_combination += 1;
@@ -2118,7 +2245,8 @@ impl DashboardApp {
         let contrast_values = [1.0, 1.5, 2.0];
 
         // Find current contrast index
-        let current_contrast_idx = contrast_values.iter()
+        let current_contrast_idx = contrast_values
+            .iter()
             .position(|&c| (c - ac.current_contrast).abs() < 0.01)
             .unwrap_or(0);
 
@@ -2190,7 +2318,10 @@ impl DashboardApp {
         let (enabled, check_interval_ms) = {
             let shared = self.shared_state.read();
             match shared.active_profile() {
-                Some(profile) => (profile.screen_recognition_enabled, profile.screen_check_interval_ms),
+                Some(profile) => (
+                    profile.screen_recognition_enabled,
+                    profile.screen_check_interval_ms,
+                ),
                 None => (false, 500),
             }
         };
@@ -2233,12 +2364,14 @@ impl DashboardApp {
         // Run screen recognition
         // Note: For now we don't provide an OCR function for text anchors
         // This could be added later by integrating with the vision pipeline
-        let result = self.screen_recognizer.recognize::<fn(u32, u32, u32, u32) -> Option<String>>(
-            &frame.data,
-            frame.width,
-            frame.height,
-            None, // No OCR function for text anchors yet
-        );
+        let result = self
+            .screen_recognizer
+            .recognize::<fn(u32, u32, u32, u32) -> Option<String>>(
+                &frame.data,
+                frame.width,
+                frame.height,
+                None, // No OCR function for text anchors yet
+            );
 
         // Update shared state with result
         let mut shared = self.shared_state.write();

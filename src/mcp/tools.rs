@@ -1,5 +1,7 @@
+#![allow(clippy::enum_variant_names)]
+
 use crate::analysis::Tip;
-use crate::capture::{CaptureTarget, capture_frame_once};
+use crate::capture::{capture_frame_once, CaptureTarget};
 use crate::shared::SharedAppState;
 use crate::storage::profiles::{
     ContentType, GameProfile, OcrRegion, ScreenDefinition, ScreenMatchMode,
@@ -33,7 +35,7 @@ fn ok_json(value: serde_json::Value) -> Result<CallToolResult, CallToolError> {
 //************************//
 #[mcp_tool(
     name = "get_current_screen",
-    description = "Returns the name and confidence of the current screen detected by the vision engine.",
+    description = "Returns the name and confidence of the current screen detected by the vision engine."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema, Default)]
 pub struct GetCurrentScreenTool {}
@@ -61,7 +63,7 @@ impl GetCurrentScreenTool {
 //************************//
 #[mcp_tool(
     name = "get_active_profile",
-    description = "Returns the full JSON configuration of the currently active GamersToolKit profile, including OCR zones, screens, rules, and templates.",
+    description = "Returns the full JSON configuration of the currently active GamersToolKit profile, including OCR zones, screens, rules, and templates."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema, Default)]
 pub struct GetActiveProfileTool {}
@@ -85,7 +87,7 @@ impl GetActiveProfileTool {
 //**********************//
 #[mcp_tool(
     name = "send_overlay_tip",
-    description = "Pushes a custom tip/alert to the overlay for the user to see. The tip is queued in shared state and consumed by the overlay when running.",
+    description = "Pushes a custom tip/alert to the overlay for the user to see. The tip is queued in shared state and consumed by the overlay when running."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema)]
 pub struct SendOverlayTipTool {
@@ -138,7 +140,7 @@ impl SendOverlayTipTool {
 //*************************//
 #[mcp_tool(
     name = "get_runtime_status",
-    description = "Returns the full runtime status of GamersToolKit: capture state, overlay state, FPS, current screen, pending tips, last errors, and OCR results.",
+    description = "Returns the full runtime status of GamersToolKit: capture state, overlay state, FPS, current screen, pending tips, last errors, and OCR results."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema, Default)]
 pub struct GetRuntimeStatusTool {}
@@ -181,7 +183,7 @@ impl GetRuntimeStatusTool {
 //*********************//
 #[mcp_tool(
     name = "list_profiles",
-    description = "Lists all loaded game profiles with their ID, name, executable names, and number of OCR zones, screens, and rules.",
+    description = "Lists all loaded game profiles with their ID, name, executable names, and number of OCR zones, screens, and rules."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema, Default)]
 pub struct ListProfilesTool {}
@@ -222,7 +224,7 @@ impl ListProfilesTool {
 //*************************//
 #[mcp_tool(
     name = "set_active_profile",
-    description = "Switches the active game profile by ID. Pass null/empty to deactivate.",
+    description = "Switches the active game profile by ID. Pass null/empty to deactivate."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema)]
 pub struct SetActiveProfileTool {
@@ -264,7 +266,7 @@ impl SetActiveProfileTool {
 //***********************//
 #[mcp_tool(
     name = "create_profile",
-    description = "Creates a new game profile with the given name and optional executable names. Returns the new profile's ID.",
+    description = "Creates a new game profile with the given name and optional executable names. Returns the new profile's ID."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema)]
 pub struct CreateProfileTool {
@@ -317,7 +319,7 @@ impl CreateProfileTool {
 //***********************//
 #[mcp_tool(
     name = "delete_profile",
-    description = "Deletes a game profile by ID. Removes it from memory and from disk.",
+    description = "Deletes a game profile by ID. Removes it from memory and from disk."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema)]
 pub struct DeleteProfileTool {
@@ -354,7 +356,7 @@ impl DeleteProfileTool {
 //*********************//
 #[mcp_tool(
     name = "list_windows",
-    description = "Lists all visible windows available for screen capture. Returns window titles.",
+    description = "Lists all visible windows available for screen capture. Returns window titles."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema, Default)]
 pub struct ListWindowsTool {}
@@ -381,7 +383,7 @@ impl ListWindowsTool {
 //***********************//
 #[mcp_tool(
     name = "list_monitors",
-    description = "Lists all available monitors for screen capture.",
+    description = "Lists all available monitors for screen capture."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema, Default)]
 pub struct ListMonitorsTool {}
@@ -408,7 +410,7 @@ impl ListMonitorsTool {
 //*******************//
 #[mcp_tool(
     name = "get_config",
-    description = "Returns the current application configuration including capture, overlay, vision, and performance settings.",
+    description = "Returns the current application configuration including capture, overlay, vision, and performance settings."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema, Default)]
 pub struct GetConfigTool {}
@@ -462,7 +464,7 @@ impl GetConfigTool {
 //******************************//
 #[mcp_tool(
     name = "update_overlay_config",
-    description = "Updates overlay settings. Only provided fields are changed; omitted fields keep their current value.",
+    description = "Updates overlay settings. Only provided fields are changed; omitted fields keep their current value."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema)]
 pub struct UpdateOverlayConfigTool {
@@ -524,7 +526,7 @@ impl UpdateOverlayConfigTool {
 //***********************//
 #[mcp_tool(
     name = "get_ocr_regions",
-    description = "Lists all OCR zones defined in the active profile with their bounds, content type, and enabled status.",
+    description = "Lists all OCR zones defined in the active profile with their bounds, content type, and enabled status."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema, Default)]
 pub struct GetOcrRegionsTool {}
@@ -568,7 +570,7 @@ impl GetOcrRegionsTool {
 //***********************//
 #[mcp_tool(
     name = "add_ocr_region",
-    description = "Adds an OCR zone to the active profile. Bounds are percentages of screen (0.0-1.0). Content type: Text, Number, Percentage, or Time.",
+    description = "Adds an OCR zone to the active profile. Bounds are percentages of screen (0.0-1.0). Content type: Text, Number, Percentage, or Time."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema)]
 pub struct AddOcrRegionTool {
@@ -621,8 +623,10 @@ impl AddOcrRegionTool {
 
             // Persist to disk
             if let Ok(dir) = crate::storage::get_profiles_dir() {
-                let _ =
-                    crate::storage::profiles::save_profile(profile, &dir.join(format!("{}.json", profile_id)));
+                let _ = crate::storage::profiles::save_profile(
+                    profile,
+                    &dir.join(format!("{}.json", profile_id)),
+                );
             }
 
             ok_json(json!({
@@ -641,7 +645,7 @@ impl AddOcrRegionTool {
 //**************************//
 #[mcp_tool(
     name = "remove_ocr_region",
-    description = "Removes an OCR zone from the active profile by zone ID.",
+    description = "Removes an OCR zone from the active profile by zone ID."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema)]
 pub struct RemoveOcrRegionTool {
@@ -696,7 +700,7 @@ impl RemoveOcrRegionTool {
 //*********************//
 #[mcp_tool(
     name = "list_screens",
-    description = "Lists all screen definitions in the active profile with their ID, name, match mode, anchor count, and hierarchy info.",
+    description = "Lists all screen definitions in the active profile with their ID, name, match mode, anchor count, and hierarchy info."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema, Default)]
 pub struct ListScreensTool {}
@@ -745,7 +749,7 @@ impl ListScreensTool {
 //*********************//
 #[mcp_tool(
     name = "add_screen",
-    description = "Adds a screen definition to the active profile for screen recognition. Uses anchor-based matching by default.",
+    description = "Adds a screen definition to the active profile for screen recognition. Uses anchor-based matching by default."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema)]
 pub struct AddScreenTool {
@@ -817,7 +821,7 @@ impl AddScreenTool {
 //****************************//
 #[mcp_tool(
     name = "get_last_ocr_results",
-    description = "Returns the last OCR text results from the vision pipeline, organized by zone ID.",
+    description = "Returns the last OCR text results from the vision pipeline, organized by zone ID."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, JsonSchema, Default)]
 pub struct GetLastOcrResultsTool {}
@@ -896,7 +900,11 @@ impl CaptureScreenshotTool {
         let frame = {
             let state = shared_state.read();
             if state.runtime.is_capturing {
-                state.runtime.last_captured_frame.as_ref().map(|f| f.as_ref().clone())
+                state
+                    .runtime
+                    .last_captured_frame
+                    .as_ref()
+                    .map(|f| f.as_ref().clone())
             } else {
                 None
             }
@@ -937,12 +945,11 @@ impl CaptureScreenshotTool {
         // Encode to JPEG
         let mut jpeg_buffer = Vec::new();
         let mut cursor = std::io::Cursor::new(&mut jpeg_buffer);
-        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut cursor, quality as u8);
+        let encoder =
+            image::codecs::jpeg::JpegEncoder::new_with_quality(&mut cursor, quality as u8);
         image::DynamicImage::ImageRgba8(final_img)
             .write_with_encoder(encoder)
-            .map_err(|e| {
-                CallToolError::from_message(format!("JPEG encoding failed: {}", e))
-            })?;
+            .map_err(|e| CallToolError::from_message(format!("JPEG encoding failed: {}", e)))?;
 
         // Base64 encode
         let b64_data = base64::engine::general_purpose::STANDARD.encode(&jpeg_buffer);

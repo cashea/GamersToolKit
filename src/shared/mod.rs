@@ -3,8 +3,8 @@
 //! This module provides thread-safe shared state and message passing
 //! for communication between the dashboard UI and overlay components.
 
-pub mod state;
 pub mod messages;
+pub mod state;
 
-pub use state::{SharedAppState, RuntimeState, CaptureCommand, OverlayCommand};
-pub use messages::{DashboardToOverlay, OverlayToDashboard, OverlayStatus};
+pub use messages::{DashboardToOverlay, OverlayToDashboard};
+pub use state::{CaptureCommand, OverlayCommand, SharedAppState};

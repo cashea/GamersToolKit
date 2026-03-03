@@ -8,7 +8,7 @@ use crate::capture::ScreenCapture;
 use crate::dashboard::components::add_scroll_slider;
 use crate::dashboard::state::{OcrGranularity, VisionViewState};
 use crate::dashboard::theme::ThemeColors;
-use crate::dashboard::views::zone_ocr::{render_zone_ocr_panel, draw_zone_overlays};
+use crate::dashboard::views::zone_ocr::{draw_zone_overlays, render_zone_ocr_panel};
 use crate::shared::SharedAppState;
 use crate::vision::OcrBackend;
 
@@ -45,12 +45,24 @@ pub fn render_vision_view(
     if available_width > 800.0 {
         // Two columns: Preview | Zone OCR
         ui.columns(2, |columns| {
-            render_preview_panel(&mut columns[0], view_state, shared_state, preview_frame, available_height);
+            render_preview_panel(
+                &mut columns[0],
+                view_state,
+                shared_state,
+                preview_frame,
+                available_height,
+            );
             render_zone_ocr_panel(&mut columns[1], view_state, available_height);
         });
     } else {
         // Single column
-        render_preview_panel(ui, view_state, shared_state, preview_frame, available_height * 0.5);
+        render_preview_panel(
+            ui,
+            view_state,
+            shared_state,
+            preview_frame,
+            available_height * 0.5,
+        );
         ui.add_space(8.0);
         render_zone_ocr_panel(ui, view_state, available_height * 0.4);
     }
@@ -124,20 +136,17 @@ fn render_ocr_backend_inline(ui: &mut egui::Ui, view_state: &mut VisionViewState
     ui.label(RichText::new(status_text).color(status_color));
 
     // Init button if needed
-    if needs_init && !view_state.is_processing {
-        if ui.small_button("Initialize").clicked() {
-            view_state.pending_init = true;
-        }
+    if needs_init && !view_state.is_processing && ui.small_button("Initialize").clicked() {
+        view_state.pending_init = true;
     }
 
     // Download button for PaddleOCR
     if view_state.selected_backend == OcrBackend::PaddleOcr
         && !view_state.models_ready
         && !view_state.is_downloading
+        && ui.small_button("Download Models").clicked()
     {
-        if ui.small_button("Download Models").clicked() {
-            view_state.pending_download = true;
-        }
+        view_state.pending_download = true;
     }
 
     if view_state.is_downloading {
@@ -146,7 +155,11 @@ fn render_ocr_backend_inline(ui: &mut egui::Ui, view_state: &mut VisionViewState
 
     // Error display
     if let Some(ref error) = view_state.last_error {
-        ui.label(RichText::new(format!("Error: {}", error)).color(ThemeColors::ACCENT_ERROR).size(14.0));
+        ui.label(
+            RichText::new(format!("Error: {}", error))
+                .color(ThemeColors::ACCENT_ERROR)
+                .size(14.0),
+        );
     }
 }
 
@@ -175,11 +188,12 @@ fn render_preview_panel(
             let preview_width = available.x - 4.0;
 
             // Calculate height based on frame aspect ratio, or use 16:9 default
-            let aspect_ratio = if view_state.last_frame_width > 0 && view_state.last_frame_height > 0 {
-                view_state.last_frame_width as f32 / view_state.last_frame_height as f32
-            } else {
-                16.0 / 9.0 // Default to 16:9
-            };
+            let aspect_ratio =
+                if view_state.last_frame_width > 0 && view_state.last_frame_height > 0 {
+                    view_state.last_frame_width as f32 / view_state.last_frame_height as f32
+                } else {
+                    16.0 / 9.0 // Default to 16:9
+                };
 
             // Height based on aspect ratio, but cap at reasonable max
             let max_preview_height = (available.y - 150.0).max(100.0); // Reserve space for controls
@@ -205,7 +219,8 @@ fn render_preview_panel(
                             &frame.data,
                         );
 
-                        let needs_update = view_state.preview_frame_size
+                        let needs_update = view_state
+                            .preview_frame_size
                             .map(|(w, h)| w != frame.width || h != frame.height)
                             .unwrap_or(true)
                             || view_state.preview_texture.is_none();
@@ -250,7 +265,8 @@ fn render_preview_panel(
                             for detection in &view_state.last_ocr_results {
                                 let (x, y, w, h) = detection.bounds;
                                 let box_rect = egui::Rect::from_min_size(
-                                    image_rect.min + egui::vec2(x as f32 * scale_x, y as f32 * scale_y),
+                                    image_rect.min
+                                        + egui::vec2(x as f32 * scale_x, y as f32 * scale_y),
                                     egui::vec2(w as f32 * scale_x, h as f32 * scale_y),
                                 );
                                 ui.painter().rect_stroke(
@@ -263,7 +279,12 @@ fn render_preview_panel(
 
                         // Draw zone overlays if enabled
                         if view_state.show_zone_overlays && !view_state.ocr_zones.is_empty() {
-                            draw_zone_overlays(ui, &view_state.ocr_zones, image_rect, &view_state.zone_ocr_results);
+                            draw_zone_overlays(
+                                ui,
+                                &view_state.ocr_zones,
+                                image_rect,
+                                &view_state.zone_ocr_results,
+                            );
                         }
                     } else {
                         // No texture yet - show placeholder
@@ -274,7 +295,11 @@ fn render_preview_panel(
                             } else {
                                 "Start capture first"
                             };
-                            ui.label(RichText::new(message).size(15.0).color(ThemeColors::TEXT_MUTED));
+                            ui.label(
+                                RichText::new(message)
+                                    .size(15.0)
+                                    .color(ThemeColors::TEXT_MUTED),
+                            );
                         });
                     }
                 });
@@ -283,7 +308,11 @@ fn render_preview_panel(
             ui.horizontal(|ui| {
                 ui.checkbox(&mut view_state.show_bounding_boxes, "Boxes");
                 if view_state.last_processing_time_ms > 0 {
-                    ui.label(RichText::new(format!("{}ms", view_state.last_processing_time_ms)).size(14.0).color(ThemeColors::TEXT_MUTED));
+                    ui.label(
+                        RichText::new(format!("{}ms", view_state.last_processing_time_ms))
+                            .size(14.0)
+                            .color(ThemeColors::TEXT_MUTED),
+                    );
                 }
             });
 
@@ -296,44 +325,79 @@ fn render_preview_panel(
                     let mut settings_changed = false;
 
                     ui.horizontal(|ui| {
-                        let enabled_checkbox = ui.checkbox(&mut view_state.preprocessing.enabled, "Enable");
+                        let enabled_checkbox =
+                            ui.checkbox(&mut view_state.preprocessing.enabled, "Enable");
                         if enabled_checkbox.changed() {
                             settings_changed = true;
                         }
-                        enabled_checkbox.on_hover_text("Apply image filters before OCR to improve accuracy");
+                        enabled_checkbox
+                            .on_hover_text("Apply image filters before OCR to improve accuracy");
                     });
 
                     ui.add_enabled_ui(view_state.preprocessing.enabled, |ui| {
                         ui.horizontal(|ui| {
-                            if ui.checkbox(&mut view_state.preprocessing.grayscale, "Grayscale").changed() {
+                            if ui
+                                .checkbox(&mut view_state.preprocessing.grayscale, "Grayscale")
+                                .changed()
+                            {
                                 settings_changed = true;
                             }
-                            if ui.checkbox(&mut view_state.preprocessing.invert, "Invert").changed() {
+                            if ui
+                                .checkbox(&mut view_state.preprocessing.invert, "Invert")
+                                .changed()
+                            {
                                 settings_changed = true;
                             }
                         });
 
                         ui.horizontal(|ui| {
                             ui.label(RichText::new("Contrast:").size(13.0));
-                            if add_scroll_slider(ui, &mut view_state.preprocessing.contrast, 0.5..=3.0, Some(0.1), None, Some(1)).changed() {
+                            if add_scroll_slider(
+                                ui,
+                                &mut view_state.preprocessing.contrast,
+                                0.5..=3.0,
+                                Some(0.1),
+                                None,
+                                Some(1),
+                            )
+                            .changed()
+                            {
                                 settings_changed = true;
                             }
                         });
 
                         ui.horizontal(|ui| {
                             ui.label(RichText::new("Sharpen:").size(13.0));
-                            if add_scroll_slider(ui, &mut view_state.preprocessing.sharpen, 0.0..=1.0, Some(0.1), None, Some(1)).changed() {
+                            if add_scroll_slider(
+                                ui,
+                                &mut view_state.preprocessing.sharpen,
+                                0.0..=1.0,
+                                Some(0.1),
+                                None,
+                                Some(1),
+                            )
+                            .changed()
+                            {
                                 settings_changed = true;
                             }
                         });
 
                         ui.horizontal(|ui| {
                             ui.label(RichText::new("Scale:").size(13.0));
-                            let scale_slider = add_scroll_slider(ui, &mut view_state.preprocessing.scale, 1..=4, Some(1.0), Some("x"), None);
+                            let scale_slider = add_scroll_slider(
+                                ui,
+                                &mut view_state.preprocessing.scale,
+                                1..=4,
+                                Some(1.0),
+                                Some("x"),
+                                None,
+                            );
                             if scale_slider.changed() {
                                 settings_changed = true;
                             }
-                            scale_slider.on_hover_text("Upscale image before OCR (2-3x recommended for small text)");
+                            scale_slider.on_hover_text(
+                                "Upscale image before OCR (2-3x recommended for small text)",
+                            );
                         });
                     });
 
@@ -350,4 +414,3 @@ fn render_preview_panel(
                 });
         });
 }
-

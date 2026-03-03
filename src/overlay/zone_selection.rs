@@ -39,7 +39,8 @@ pub fn render_zone_selection(
     egui::Area::new(egui::Id::new("zone_selection_overlay"))
         .fixed_pos(Pos2::ZERO)
         .show(ctx, |ui| {
-            let screen_rect = Rect::from_min_size(Pos2::ZERO, egui::vec2(screen_size.0, screen_size.1));
+            let screen_rect =
+                Rect::from_min_size(Pos2::ZERO, egui::vec2(screen_size.0, screen_size.1));
 
             // Allocate the full screen for interaction
             let response = ui.allocate_rect(screen_rect, egui::Sense::click_and_drag());
@@ -198,14 +199,16 @@ pub fn screen_to_normalized(
     let width = (max_x - min_x) / screen_size.0;
     let height = (max_y - min_y) / screen_size.1;
 
-    (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0), width.clamp(0.0, 1.0), height.clamp(0.0, 1.0))
+    (
+        x.clamp(0.0, 1.0),
+        y.clamp(0.0, 1.0),
+        width.clamp(0.0, 1.0),
+        height.clamp(0.0, 1.0),
+    )
 }
 
 /// Convert normalized bounds to screen coordinates
-pub fn normalized_to_screen(
-    bounds: (f32, f32, f32, f32),
-    screen_size: (f32, f32),
-) -> Rect {
+pub fn normalized_to_screen(bounds: (f32, f32, f32, f32), screen_size: (f32, f32)) -> Rect {
     let (x, y, width, height) = bounds;
     Rect::from_min_size(
         Pos2::new(x * screen_size.0, y * screen_size.1),

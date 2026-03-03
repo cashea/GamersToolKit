@@ -1,4 +1,6 @@
+use crate::shared::SharedAppState;
 use async_trait::async_trait;
+use parking_lot::RwLock;
 use rust_mcp_schema::{
     CallToolRequestParams, CallToolResult, CompleteRequestParams, CompleteResult,
     ListResourceTemplatesResult, ListResourcesResult, ListToolsResult, PaginatedRequestParams,
@@ -7,16 +9,17 @@ use rust_mcp_schema::{
 use rust_mcp_sdk::{
     mcp_server::{server_runtime, McpServerOptions, ServerHandler},
     schema::schema_utils::CallToolError,
-    schema::{RpcError, Implementation, InitializeResult, ProtocolVersion, ServerCapabilities, ServerCapabilitiesTools},
+    schema::{
+        Implementation, InitializeResult, ProtocolVersion, RpcError, ServerCapabilities,
+        ServerCapabilitiesTools,
+    },
     McpServer as McpServerTrait, StdioTransport, ToMcpServerHandler, TransportOptions,
 };
-use crate::shared::SharedAppState;
-use parking_lot::RwLock;
 use std::sync::Arc;
 
-pub mod tools;
 pub mod prompts;
 pub mod resources;
+pub mod tools;
 
 pub struct McpServer {
     shared_state: Arc<RwLock<SharedAppState>>,
@@ -103,25 +106,63 @@ impl ServerHandler for GamersToolKitHandler {
             tools::GamersToolKitTools::try_from(params).map_err(CallToolError::new)?;
 
         match tool_params {
-            tools::GamersToolKitTools::GetCurrentScreenTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
-            tools::GamersToolKitTools::GetActiveProfileTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
-            tools::GamersToolKitTools::SendOverlayTipTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
-            tools::GamersToolKitTools::GetRuntimeStatusTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
-            tools::GamersToolKitTools::ListProfilesTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
-            tools::GamersToolKitTools::SetActiveProfileTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
-            tools::GamersToolKitTools::CreateProfileTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
-            tools::GamersToolKitTools::DeleteProfileTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
-            tools::GamersToolKitTools::ListWindowsTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
-            tools::GamersToolKitTools::ListMonitorsTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
-            tools::GamersToolKitTools::GetConfigTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
-            tools::GamersToolKitTools::UpdateOverlayConfigTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
-            tools::GamersToolKitTools::GetOcrRegionsTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
-            tools::GamersToolKitTools::AddOcrRegionTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
-            tools::GamersToolKitTools::RemoveOcrRegionTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
-            tools::GamersToolKitTools::ListScreensTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
-            tools::GamersToolKitTools::AddScreenTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
-            tools::GamersToolKitTools::GetLastOcrResultsTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
-            tools::GamersToolKitTools::CaptureScreenshotTool(t) => t.call_tool(Arc::clone(&self.shared_state)),
+            tools::GamersToolKitTools::GetCurrentScreenTool(t) => {
+                t.call_tool(Arc::clone(&self.shared_state))
+            }
+            tools::GamersToolKitTools::GetActiveProfileTool(t) => {
+                t.call_tool(Arc::clone(&self.shared_state))
+            }
+            tools::GamersToolKitTools::SendOverlayTipTool(t) => {
+                t.call_tool(Arc::clone(&self.shared_state))
+            }
+            tools::GamersToolKitTools::GetRuntimeStatusTool(t) => {
+                t.call_tool(Arc::clone(&self.shared_state))
+            }
+            tools::GamersToolKitTools::ListProfilesTool(t) => {
+                t.call_tool(Arc::clone(&self.shared_state))
+            }
+            tools::GamersToolKitTools::SetActiveProfileTool(t) => {
+                t.call_tool(Arc::clone(&self.shared_state))
+            }
+            tools::GamersToolKitTools::CreateProfileTool(t) => {
+                t.call_tool(Arc::clone(&self.shared_state))
+            }
+            tools::GamersToolKitTools::DeleteProfileTool(t) => {
+                t.call_tool(Arc::clone(&self.shared_state))
+            }
+            tools::GamersToolKitTools::ListWindowsTool(t) => {
+                t.call_tool(Arc::clone(&self.shared_state))
+            }
+            tools::GamersToolKitTools::ListMonitorsTool(t) => {
+                t.call_tool(Arc::clone(&self.shared_state))
+            }
+            tools::GamersToolKitTools::GetConfigTool(t) => {
+                t.call_tool(Arc::clone(&self.shared_state))
+            }
+            tools::GamersToolKitTools::UpdateOverlayConfigTool(t) => {
+                t.call_tool(Arc::clone(&self.shared_state))
+            }
+            tools::GamersToolKitTools::GetOcrRegionsTool(t) => {
+                t.call_tool(Arc::clone(&self.shared_state))
+            }
+            tools::GamersToolKitTools::AddOcrRegionTool(t) => {
+                t.call_tool(Arc::clone(&self.shared_state))
+            }
+            tools::GamersToolKitTools::RemoveOcrRegionTool(t) => {
+                t.call_tool(Arc::clone(&self.shared_state))
+            }
+            tools::GamersToolKitTools::ListScreensTool(t) => {
+                t.call_tool(Arc::clone(&self.shared_state))
+            }
+            tools::GamersToolKitTools::AddScreenTool(t) => {
+                t.call_tool(Arc::clone(&self.shared_state))
+            }
+            tools::GamersToolKitTools::GetLastOcrResultsTool(t) => {
+                t.call_tool(Arc::clone(&self.shared_state))
+            }
+            tools::GamersToolKitTools::CaptureScreenshotTool(t) => {
+                t.call_tool(Arc::clone(&self.shared_state))
+            }
         }
     }
 
@@ -134,10 +175,10 @@ impl ServerHandler for GamersToolKitHandler {
             meta: None,
             next_cursor: None,
             resources: vec![
-                    resources::ProfileActiveResource::resource(),
-                    resources::ConfigCurrentResource::resource(),
-                    resources::RuntimeStatusResource::resource(),
-                ],
+                resources::ProfileActiveResource::resource(),
+                resources::ConfigCurrentResource::resource(),
+                resources::RuntimeStatusResource::resource(),
+            ],
         })
     }
 
@@ -182,9 +223,9 @@ impl ServerHandler for GamersToolKitHandler {
             meta: None,
             next_cursor: None,
             prompts: vec![
-                    prompts::AnalyzeGameStatePrompt::prompt(),
-                    prompts::CreateGameProfilePrompt::prompt(),
-                ],
+                prompts::AnalyzeGameStatePrompt::prompt(),
+                prompts::CreateGameProfilePrompt::prompt(),
+            ],
         })
     }
 

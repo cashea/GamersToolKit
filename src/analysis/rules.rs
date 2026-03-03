@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Rules engine using rhai scripting
 //!
 //! Allows game profiles to define custom logic for generating tips and alerts.

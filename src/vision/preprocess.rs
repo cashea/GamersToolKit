@@ -2,7 +2,7 @@
 //!
 //! Handles image resizing, normalization, and tensor conversion for PaddleOCR models.
 
-use ndarray::{Array3, Array4, ArrayView3};
+use ndarray::{Array3, Array4};
 
 /// Preprocessing configuration
 #[derive(Debug, Clone)]
@@ -22,9 +22,9 @@ pub struct PreprocessConfig {
 impl Default for PreprocessConfig {
     fn default() -> Self {
         Self {
-            det_target_size: 960,  // Larger size for better detection on high-res screens
+            det_target_size: 960, // Larger size for better detection on high-res screens
             rec_target_height: 48,
-            rec_max_width: 640,    // Allow wider text regions (was 320)
+            rec_max_width: 640, // Allow wider text regions (was 320)
             // PaddleOCR uses simple 0-1 normalization (not ImageNet style)
             // The model expects: (pixel / 255.0 - 0.5) / 0.5 = pixel / 127.5 - 1.0
             // This maps [0, 255] -> [-1, 1]
@@ -44,7 +44,7 @@ pub fn rgba_to_rgb_f32(data: &[u8], width: u32, height: u32) -> Array3<f32> {
             let idx = (y * width as usize + x) * 4;
             if idx + 2 < data.len() {
                 // RGBA to RGB, normalize to 0-1
-                rgb[[y, x, 0]] = data[idx] as f32 / 255.0;     // R
+                rgb[[y, x, 0]] = data[idx] as f32 / 255.0; // R
                 rgb[[y, x, 1]] = data[idx + 1] as f32 / 255.0; // G
                 rgb[[y, x, 2]] = data[idx + 2] as f32 / 255.0; // B
             }
@@ -88,10 +88,7 @@ pub fn hwc_to_nchw(image: &Array3<f32>) -> Array4<f32> {
 
 /// Resize image to target size while maintaining aspect ratio
 /// Returns (resized_image, scale_factor)
-pub fn resize_for_detection(
-    image: &Array3<f32>,
-    target_size: u32,
-) -> (Array3<f32>, f32) {
+pub fn resize_for_detection(image: &Array3<f32>, target_size: u32) -> (Array3<f32>, f32) {
     let (h, w, c) = image.dim();
     let h = h as f32;
     let w = w as f32;
@@ -102,8 +99,8 @@ pub fn resize_for_detection(
     let new_w = (w * scale) as usize;
 
     // Pad to make dimensions divisible by 32 (required by model)
-    let padded_h = ((new_h + 31) / 32) * 32;
-    let padded_w = ((new_w + 31) / 32) * 32;
+    let padded_h = new_h.div_ceil(32) * 32;
+    let padded_w = new_w.div_ceil(32) * 32;
 
     // Bilinear interpolation resize
     let mut resized = Array3::<f32>::zeros((padded_h, padded_w, c));
@@ -159,7 +156,7 @@ pub fn resize_for_recognition(
     for y in 0..new_h {
         for x in 0..new_w {
             let src_y = (y as f32 / scale).min(h as f32 - 1.0);
-            let src_x = (x as f32 / scale).min(w as f32 - 1.0);
+            let src_x = (x as f32 / scale).min(w - 1.0);
 
             // Bilinear interpolation
             let y0 = src_y.floor() as usize;
@@ -187,15 +184,18 @@ pub fn resize_for_recognition(
 }
 
 /// Crop a region from an image given a polygon (4 points)
-pub fn crop_polygon(
-    image: &Array3<f32>,
-    polygon: &[(f32, f32); 4],
-) -> Array3<f32> {
+pub fn crop_polygon(image: &Array3<f32>, polygon: &[(f32, f32); 4]) -> Array3<f32> {
     // Calculate bounding box
     let min_x = polygon.iter().map(|p| p.0).fold(f32::INFINITY, f32::min);
     let min_y = polygon.iter().map(|p| p.1).fold(f32::INFINITY, f32::min);
-    let max_x = polygon.iter().map(|p| p.0).fold(f32::NEG_INFINITY, f32::max);
-    let max_y = polygon.iter().map(|p| p.1).fold(f32::NEG_INFINITY, f32::max);
+    let max_x = polygon
+        .iter()
+        .map(|p| p.0)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let max_y = polygon
+        .iter()
+        .map(|p| p.1)
+        .fold(f32::NEG_INFINITY, f32::max);
 
     let (img_h, img_w, c) = image.dim();
 
@@ -247,10 +247,7 @@ pub fn preprocess_for_detection(
 }
 
 /// Full preprocessing pipeline for recognition
-pub fn preprocess_for_recognition(
-    image: &Array3<f32>,
-    config: &PreprocessConfig,
-) -> Array4<f32> {
+pub fn preprocess_for_recognition(image: &Array3<f32>, config: &PreprocessConfig) -> Array4<f32> {
     // 1. Resize to fixed height
     let resized = resize_for_recognition(image, config.rec_target_height, config.rec_max_width);
 
@@ -269,9 +266,9 @@ mod tests {
     fn test_rgba_to_rgb() {
         // Create a 2x2 RGBA image
         let rgba = vec![
-            255, 0, 0, 255,     // Red pixel (RGBA)
-            0, 255, 0, 255,     // Green pixel
-            0, 0, 255, 255,     // Blue pixel
+            255, 0, 0, 255, // Red pixel (RGBA)
+            0, 255, 0, 255, // Green pixel
+            0, 0, 255, 255, // Blue pixel
             128, 128, 128, 255, // Gray pixel
         ];
 
@@ -279,20 +276,19 @@ mod tests {
 
         // Check red pixel at (0,0)
         assert!((rgb[[0, 0, 0]] - 1.0).abs() < 0.01); // R = 1.0
-        assert!(rgb[[0, 0, 1]].abs() < 0.01);         // G = 0.0
-        assert!(rgb[[0, 0, 2]].abs() < 0.01);         // B = 0.0
+        assert!(rgb[[0, 0, 1]].abs() < 0.01); // G = 0.0
+        assert!(rgb[[0, 0, 2]].abs() < 0.01); // B = 0.0
 
         // Check green pixel at (0,1)
-        assert!(rgb[[0, 1, 0]].abs() < 0.01);         // R = 0.0
+        assert!(rgb[[0, 1, 0]].abs() < 0.01); // R = 0.0
         assert!((rgb[[0, 1, 1]] - 1.0).abs() < 0.01); // G = 1.0
-        assert!(rgb[[0, 1, 2]].abs() < 0.01);         // B = 0.0
+        assert!(rgb[[0, 1, 2]].abs() < 0.01); // B = 0.0
     }
 
     #[test]
     fn test_hwc_to_nchw() {
-        let hwc = Array3::<f32>::from_shape_fn((10, 20, 3), |(h, w, c)| {
-            (h * 100 + w * 10 + c) as f32
-        });
+        let hwc =
+            Array3::<f32>::from_shape_fn((10, 20, 3), |(h, w, c)| (h * 100 + w * 10 + c) as f32);
 
         let nchw = hwc_to_nchw(&hwc);
 

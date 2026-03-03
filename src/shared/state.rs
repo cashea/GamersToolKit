@@ -1,13 +1,14 @@
+#![allow(dead_code)]
 //! Shared application state between dashboard and overlay
 
+use crate::capture::CaptureConfig;
 use crate::config::AppConfig;
 use crate::overlay::OverlayConfig;
-use crate::capture::CaptureConfig;
 use crate::storage::profiles::GameProfile;
 use crate::vision::ScreenMatch;
 
 /// Central shared state between dashboard and overlay
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SharedAppState {
     /// Application configuration
     pub config: AppConfig,
@@ -21,19 +22,6 @@ pub struct SharedAppState {
     pub active_profile_id: Option<String>,
     /// Runtime state (not persisted)
     pub runtime: RuntimeState,
-}
-
-impl Default for SharedAppState {
-    fn default() -> Self {
-        Self {
-            config: AppConfig::default(),
-            overlay_config: OverlayConfig::default(),
-            capture_config: CaptureConfig::default(),
-            profiles: Vec::new(),
-            active_profile_id: None,
-            runtime: RuntimeState::default(),
-        }
-    }
 }
 
 impl SharedAppState {
@@ -83,9 +71,9 @@ impl SharedAppState {
 
     /// Get the active profile if one is selected
     pub fn active_profile(&self) -> Option<&GameProfile> {
-        self.active_profile_id.as_ref().and_then(|id| {
-            self.profiles.iter().find(|p| &p.id == id)
-        })
+        self.active_profile_id
+            .as_ref()
+            .and_then(|id| self.profiles.iter().find(|p| &p.id == id))
     }
 
     /// Set the active profile by ID

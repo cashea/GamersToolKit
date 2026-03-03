@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Event system for game state changes
 //!
 //! Detects and emits events when game state changes are detected.
@@ -14,13 +15,9 @@ pub enum GameEvent {
         new_value: String,
     },
     /// Visual element appeared
-    ElementAppeared {
-        element_id: String,
-    },
+    ElementAppeared { element_id: String },
     /// Visual element disappeared
-    ElementDisappeared {
-        element_id: String,
-    },
+    ElementDisappeared { element_id: String },
     /// Numeric value crossed threshold
     ThresholdCrossed {
         region_id: String,

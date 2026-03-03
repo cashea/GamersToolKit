@@ -6,7 +6,10 @@ fn main() {
         let mut res = winresource::WindowsResource::new();
         res.set_icon("assets/icon.ico");
         res.set("ProductName", "GamersToolKit");
-        res.set("FileDescription", "Real-time game analysis and assistance overlay");
+        res.set(
+            "FileDescription",
+            "Real-time game analysis and assistance overlay",
+        );
         res.set("LegalCopyright", "Copyright (c) 2024");
         res.compile().expect("Failed to compile Windows resources");
     }

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Screen Recognition Module
 //!
 //! Recognizes game screens (menus, HUDs, etc.) using template matching and anchor-based detection.
@@ -9,9 +10,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 use tracing::{debug, info};
 
-use crate::storage::profiles::{
-    AnchorType, ScreenAnchor, ScreenDefinition, ScreenMatchMode,
-};
+use crate::storage::profiles::{AnchorType, ScreenAnchor, ScreenDefinition, ScreenMatchMode};
 
 /// Result of screen recognition
 #[derive(Debug, Clone)]
@@ -255,7 +254,8 @@ impl ScreenRecognizer {
         let mut best_confidence: f32 = 0.0;
 
         // Track which screens matched (for hierarchy validation)
-        let mut matched_screen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut matched_screen_ids: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
 
         for screen in screens {
             if !screen.enabled {
@@ -271,7 +271,9 @@ impl ScreenRecognizer {
             }
 
             // Try to match this screen
-            if let Some(screen_match) = self.match_screen(screen, &grayscale, width, height, &ocr_fn) {
+            if let Some(screen_match) =
+                self.match_screen(screen, &grayscale, width, height, &ocr_fn)
+            {
                 if screen_match.confidence >= screen.match_threshold {
                     matched_screen_ids.insert(screen.id.clone());
 
@@ -311,9 +313,7 @@ impl ScreenRecognizer {
         F: Fn(u32, u32, u32, u32) -> Option<String>,
     {
         match screen.match_mode {
-            ScreenMatchMode::FullScreenshot => {
-                self.match_full_screenshot(screen, grayscale)
-            }
+            ScreenMatchMode::FullScreenshot => self.match_full_screenshot(screen, grayscale),
             ScreenMatchMode::Anchors => {
                 self.match_anchors(screen, grayscale, width, height, ocr_fn)
             }
@@ -332,7 +332,12 @@ impl ScreenRecognizer {
         let scaled_image = if (self.config.match_scale - 1.0).abs() > 0.01 {
             let new_w = (grayscale.width() as f32 * self.config.match_scale) as u32;
             let new_h = (grayscale.height() as f32 * self.config.match_scale) as u32;
-            image::imageops::resize(grayscale, new_w, new_h, image::imageops::FilterType::Triangle)
+            image::imageops::resize(
+                grayscale,
+                new_w,
+                new_h,
+                image::imageops::FilterType::Triangle,
+            )
         } else {
             grayscale.clone()
         };
@@ -340,7 +345,12 @@ impl ScreenRecognizer {
         let scaled_template = if (self.config.match_scale - 1.0).abs() > 0.01 {
             let new_w = (template.width() as f32 * self.config.match_scale) as u32;
             let new_h = (template.height() as f32 * self.config.match_scale) as u32;
-            image::imageops::resize(template, new_w, new_h, image::imageops::FilterType::Triangle)
+            image::imageops::resize(
+                template,
+                new_w,
+                new_h,
+                image::imageops::FilterType::Triangle,
+            )
         } else {
             template.clone()
         };
@@ -442,12 +452,8 @@ impl ScreenRecognizer {
         let h = (anchor.bounds.3 * height as f32) as u32;
 
         match anchor.anchor_type {
-            AnchorType::Visual => {
-                self.match_visual_anchor(anchor, grayscale, x, y, w, h)
-            }
-            AnchorType::Text => {
-                self.match_text_anchor(anchor, x, y, w, h, ocr_fn)
-            }
+            AnchorType::Visual => self.match_visual_anchor(anchor, grayscale, x, y, w, h),
+            AnchorType::Text => self.match_text_anchor(anchor, x, y, w, h, ocr_fn),
         }
     }
 
@@ -553,8 +559,7 @@ impl ScreenRecognizer {
 
     /// Decode PNG template data to grayscale image
     fn decode_template(&self, data: &[u8]) -> Result<GrayImage> {
-        let img = image::load_from_memory(data)
-            .context("Failed to decode template image")?;
+        let img = image::load_from_memory(data).context("Failed to decode template image")?;
         Ok(img.to_luma8())
     }
 
@@ -633,11 +638,17 @@ fn compute_image_similarity(image: &GrayImage, template: &GrayImage) -> f32 {
     let (tmpl_w, tmpl_h) = template.dimensions();
 
     // If sizes differ significantly, resize template to match
-    let template = if (img_w as i32 - tmpl_w as i32).abs() > 5 || (img_h as i32 - tmpl_h as i32).abs() > 5 {
-        image::imageops::resize(template, img_w, img_h, image::imageops::FilterType::Triangle)
-    } else {
-        template.clone()
-    };
+    let template =
+        if (img_w as i32 - tmpl_w as i32).abs() > 5 || (img_h as i32 - tmpl_h as i32).abs() > 5 {
+            image::imageops::resize(
+                template,
+                img_w,
+                img_h,
+                image::imageops::FilterType::Triangle,
+            )
+        } else {
+            template.clone()
+        };
 
     let (tmpl_w, tmpl_h) = template.dimensions();
     let compare_w = img_w.min(tmpl_w);
@@ -713,17 +724,29 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
     let len_a = a_chars.len();
     let len_b = b_chars.len();
 
-    if len_a == 0 { return len_b; }
-    if len_b == 0 { return len_a; }
+    if len_a == 0 {
+        return len_b;
+    }
+    if len_b == 0 {
+        return len_a;
+    }
 
     let mut matrix = vec![vec![0; len_b + 1]; len_a + 1];
 
-    for i in 0..=len_a { matrix[i][0] = i; }
-    for j in 0..=len_b { matrix[0][j] = j; }
+    for (i, row) in matrix.iter_mut().enumerate().take(len_a + 1) {
+        row[0] = i;
+    }
+    for (j, val) in matrix[0].iter_mut().enumerate().take(len_b + 1) {
+        *val = j;
+    }
 
     for i in 1..=len_a {
         for j in 1..=len_b {
-            let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
+            let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                0
+            } else {
+                1
+            };
             matrix[i][j] = (matrix[i - 1][j] + 1)
                 .min(matrix[i][j - 1] + 1)
                 .min(matrix[i - 1][j - 1] + cost);
@@ -831,20 +854,21 @@ mod tests {
 
     #[test]
     fn test_image_similarity_identical() {
-        let img = GrayImage::from_fn(10, 10, |x, y| {
-            Luma([((x + y) % 256) as u8])
-        });
+        let img = GrayImage::from_fn(10, 10, |x, y| Luma([((x + y) % 256) as u8]));
 
         let similarity = compute_image_similarity(&img, &img);
-        assert!((similarity - 1.0).abs() < 0.01, "Identical images should have similarity ~1.0");
+        assert!(
+            (similarity - 1.0).abs() < 0.01,
+            "Identical images should have similarity ~1.0"
+        );
     }
 
     #[test]
     fn test_bgra_to_grayscale() {
         let data = vec![
-            255, 0, 0, 255,   // Blue
-            0, 255, 0, 255,   // Green
-            0, 0, 255, 255,   // Red
+            255, 0, 0, 255, // Blue
+            0, 255, 0, 255, // Green
+            0, 0, 255, 255, // Red
             128, 128, 128, 255, // Gray
         ];
 

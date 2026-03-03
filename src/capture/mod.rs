@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Screen Capture Layer
 //!
 //! Uses Windows Graphics Capture API for safe, anti-cheat compliant screen capture.
@@ -7,9 +8,9 @@ pub mod frame;
 pub use frame::CapturedFrame;
 
 use anyhow::{Context, Result};
-use crossbeam_channel::{Receiver, Sender, bounded};
-use std::sync::Arc;
+use crossbeam_channel::{bounded, Receiver, Sender};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use windows_capture::{
     capture::{Context as CaptureContext, GraphicsCaptureApiHandler},
@@ -17,13 +18,11 @@ use windows_capture::{
     graphics_capture_api::InternalCaptureControl,
     monitor::Monitor,
     settings::{
-        ColorFormat, CursorCaptureSettings, DrawBorderSettings,
-        Settings, SecondaryWindowSettings, MinimumUpdateIntervalSettings,
-        DirtyRegionSettings,
+        ColorFormat, CursorCaptureSettings, DirtyRegionSettings, DrawBorderSettings,
+        MinimumUpdateIntervalSettings, SecondaryWindowSettings, Settings,
     },
     window::Window,
 };
-
 
 /// Screen capture configuration
 #[derive(Debug, Clone)]
@@ -358,12 +357,11 @@ pub fn capture_frame_once(target: &CaptureTarget) -> Result<CapturedFrame> {
 /// Uses Windows API to find the window and set it as the foreground window.
 /// Returns true if successful, false if window not found or operation failed.
 pub fn bring_window_to_front(title: &str) -> bool {
+    use std::sync::Mutex;
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowTextW, SetForegroundWindow, ShowWindow, SW_RESTORE,
-        IsIconic,
+        EnumWindows, GetWindowTextW, IsIconic, SetForegroundWindow, ShowWindow, SW_RESTORE,
     };
-    use std::sync::Mutex;
 
     // Thread-safe storage for the found window handle
     static FOUND_HWND: Mutex<Option<isize>> = Mutex::new(None);
@@ -375,11 +373,14 @@ pub fn bring_window_to_front(title: &str) -> bool {
 
     // Store title in thread-local for the callback
     thread_local! {
-        static SEARCH_TITLE: std::cell::RefCell<String> = std::cell::RefCell::new(String::new());
+        static SEARCH_TITLE: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
     }
     SEARCH_TITLE.with(|t| *t.borrow_mut() = title_lower.clone());
 
-    unsafe extern "system" fn enum_callback(hwnd: HWND, _: windows::Win32::Foundation::LPARAM) -> windows::Win32::Foundation::BOOL {
+    unsafe extern "system" fn enum_callback(
+        hwnd: HWND,
+        _: windows::Win32::Foundation::LPARAM,
+    ) -> windows::Win32::Foundation::BOOL {
         let mut buffer = [0u16; 512];
         let len = GetWindowTextW(hwnd, &mut buffer);
         if len > 0 {
@@ -388,7 +389,6 @@ pub fn bring_window_to_front(title: &str) -> bool {
             SEARCH_TITLE.with(|t| {
                 if window_title.contains(&*t.borrow()) {
                     *FOUND_HWND.lock().unwrap() = Some(hwnd.0 as isize);
-                    return;
                 }
             });
 

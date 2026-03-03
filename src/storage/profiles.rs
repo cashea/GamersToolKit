@@ -252,7 +252,7 @@ pub fn load_all_profiles(dir: &Path) -> Result<Vec<GameProfile>> {
         let path = entry.path();
 
         // Only load .json files
-        if path.extension().map_or(false, |ext| ext == "json") {
+        if path.extension().is_some_and(|ext| ext == "json") {
             match load_profile(&path) {
                 Ok(profile) => {
                     profiles.push(profile);
@@ -305,55 +305,45 @@ mod tests {
                     preprocessing: None,
                 },
             ],
-            templates: vec![
-                TemplateDefinition {
-                    id: "low_health_icon".to_string(),
-                    image_path: "templates/low_health.png".to_string(),
-                    threshold: 0.8,
-                },
-            ],
-            rules: vec![
-                RuleDefinition {
-                    id: "low_health_warning".to_string(),
-                    name: "Low Health Warning".to_string(),
-                    enabled: true,
-                    script: r#"if health < 20 { alert("Low health!") }"#.to_string(),
-                },
-            ],
-            labeled_regions: vec![
-                LabeledRegion {
-                    label: "Gold".to_string(),
-                    matched_text: "1,234".to_string(),
-                    bounds: (100, 50, 80, 20),
-                    confidence: 0.95,
-                },
-            ],
-            screens: vec![
-                ScreenDefinition {
-                    id: "main_menu".to_string(),
-                    name: "Main Menu".to_string(),
-                    parent_id: None,
-                    match_mode: ScreenMatchMode::Anchors,
-                    anchors: vec![
-                        ScreenAnchor {
-                            id: "title_text".to_string(),
-                            anchor_type: AnchorType::Text,
-                            bounds: (0.4, 0.1, 0.2, 0.1),
-                            template_data: None,
-                            expected_text: Some("Test Game".to_string()),
-                            text_similarity: 0.9,
-                            required: true,
-                        },
-                    ],
-                    full_template: None,
-                    match_threshold: 0.8,
-                    enabled: true,
-                    priority: 10,
-                    ocr_zone_overrides: vec![],
-                    rules_to_trigger: vec![],
-                    show_notification: true,
-                },
-            ],
+            templates: vec![TemplateDefinition {
+                id: "low_health_icon".to_string(),
+                image_path: "templates/low_health.png".to_string(),
+                threshold: 0.8,
+            }],
+            rules: vec![RuleDefinition {
+                id: "low_health_warning".to_string(),
+                name: "Low Health Warning".to_string(),
+                enabled: true,
+                script: r#"if health < 20 { alert("Low health!") }"#.to_string(),
+            }],
+            labeled_regions: vec![LabeledRegion {
+                label: "Gold".to_string(),
+                matched_text: "1,234".to_string(),
+                bounds: (100, 50, 80, 20),
+                confidence: 0.95,
+            }],
+            screens: vec![ScreenDefinition {
+                id: "main_menu".to_string(),
+                name: "Main Menu".to_string(),
+                parent_id: None,
+                match_mode: ScreenMatchMode::Anchors,
+                anchors: vec![ScreenAnchor {
+                    id: "title_text".to_string(),
+                    anchor_type: AnchorType::Text,
+                    bounds: (0.4, 0.1, 0.2, 0.1),
+                    template_data: None,
+                    expected_text: Some("Test Game".to_string()),
+                    text_similarity: 0.9,
+                    required: true,
+                }],
+                full_template: None,
+                match_threshold: 0.8,
+                enabled: true,
+                priority: 10,
+                ocr_zone_overrides: vec![],
+                rules_to_trigger: vec![],
+                show_notification: true,
+            }],
             screen_recognition_enabled: true,
             screen_check_interval_ms: 500,
         }
@@ -377,8 +367,14 @@ mod tests {
         assert_eq!(profile.rules.len(), parsed.rules.len());
         assert_eq!(profile.labeled_regions.len(), parsed.labeled_regions.len());
         assert_eq!(profile.screens.len(), parsed.screens.len());
-        assert_eq!(profile.screen_recognition_enabled, parsed.screen_recognition_enabled);
-        assert_eq!(profile.screen_check_interval_ms, parsed.screen_check_interval_ms);
+        assert_eq!(
+            profile.screen_recognition_enabled,
+            parsed.screen_recognition_enabled
+        );
+        assert_eq!(
+            profile.screen_check_interval_ms,
+            parsed.screen_check_interval_ms
+        );
     }
 
     #[test]
@@ -551,12 +547,10 @@ mod tests {
             match_threshold: 0.75,
             enabled: true,
             priority: 5,
-            ocr_zone_overrides: vec![
-                ZoneOverride {
-                    zone_id: "gold".to_string(),
-                    enabled: true,
-                },
-            ],
+            ocr_zone_overrides: vec![ZoneOverride {
+                zone_id: "gold".to_string(),
+                enabled: true,
+            }],
             rules_to_trigger: vec!["inventory_opened".to_string()],
             show_notification: false,
         };
@@ -569,7 +563,10 @@ mod tests {
         assert_eq!(screen.parent_id, parsed.parent_id);
         assert_eq!(screen.match_mode, parsed.match_mode);
         assert_eq!(screen.anchors.len(), parsed.anchors.len());
-        assert_eq!(screen.ocr_zone_overrides.len(), parsed.ocr_zone_overrides.len());
+        assert_eq!(
+            screen.ocr_zone_overrides.len(),
+            parsed.ocr_zone_overrides.len()
+        );
         assert_eq!(screen.rules_to_trigger.len(), parsed.rules_to_trigger.len());
     }
 

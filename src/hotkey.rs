@@ -191,7 +191,7 @@ impl HotkeyManager {
 
     /// Unregister the toggle hotkey
     pub fn unregister_toggle_hotkey(&mut self) {
-        if let Some(id) = self.toggle_hotkey_id.take() {
+        if let Some(_id) = self.toggle_hotkey_id.take() {
             // Get the hotkey string to reconstruct the HotKey for unregistration
             let hotkey_str = {
                 let state = self.shared_state.read();
@@ -219,15 +219,18 @@ impl HotkeyManager {
         if let Some(ref hotkey_str) = hotkey_str {
             match parse_hotkey(hotkey_str) {
                 Ok(hotkey) => {
-                    self.manager
-                        .register(hotkey)
-                        .map_err(|e| anyhow!("Failed to register zone selection hotkey: {:?}", e))?;
+                    self.manager.register(hotkey).map_err(|e| {
+                        anyhow!("Failed to register zone selection hotkey: {:?}", e)
+                    })?;
 
                     self.zone_selection_hotkey_id = Some(hotkey.id());
                     info!("Registered zone selection hotkey: {}", hotkey_str);
                 }
                 Err(e) => {
-                    warn!("Failed to parse zone selection hotkey '{}': {}", hotkey_str, e);
+                    warn!(
+                        "Failed to parse zone selection hotkey '{}': {}",
+                        hotkey_str, e
+                    );
                     return Err(e);
                 }
             }
@@ -238,7 +241,7 @@ impl HotkeyManager {
 
     /// Unregister the zone selection hotkey
     pub fn unregister_zone_selection_hotkey(&mut self) {
-        if let Some(id) = self.zone_selection_hotkey_id.take() {
+        if let Some(_id) = self.zone_selection_hotkey_id.take() {
             let hotkey_str = {
                 let state = self.shared_state.read();
                 state.config.overlay.zone_selection_hotkey.clone()

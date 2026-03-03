@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Model management for ONNX Runtime
 //!
 //! Handles downloading, caching, and loading of PaddleOCR models.
@@ -61,10 +62,10 @@ impl ModelType {
     /// Expected file size for integrity check (approximate, in bytes)
     pub fn expected_size_range(&self) -> (u64, u64) {
         match self {
-            ModelType::Detection => (2_000_000, 5_000_000),      // ~2.43 MB
-            ModelType::Recognition => (7_000_000, 10_000_000),   // ~7.83 MB
-            ModelType::Classifier => (2_000_000, 5_000_000),     // Using detection as fallback
-            ModelType::Dictionary => (500, 10_000),              // ~1.42 KB
+            ModelType::Detection => (2_000_000, 5_000_000), // ~2.43 MB
+            ModelType::Recognition => (7_000_000, 10_000_000), // ~7.83 MB
+            ModelType::Classifier => (2_000_000, 5_000_000), // Using detection as fallback
+            ModelType::Dictionary => (500, 10_000),         // ~1.42 KB
         }
     }
 
@@ -235,7 +236,11 @@ impl ModelManager {
         let url = model_type.download_url();
         let path = self.model_path(model_type);
 
-        info!("Downloading {} model from {}", model_type.display_name(), url);
+        info!(
+            "Downloading {} model from {}",
+            model_type.display_name(),
+            url
+        );
 
         // Check if we're in offline mode
         if std::env::var("GAMERS_TOOLKIT_OFFLINE").is_ok() {
@@ -246,7 +251,8 @@ impl ModelManager {
         let rt = Runtime::new().context("Failed to create tokio runtime")?;
 
         rt.block_on(async {
-            self.download_file_async(url, &path, model_type, progress).await
+            self.download_file_async(url, &path, model_type, progress)
+                .await
         })?;
 
         // Verify the download
@@ -257,7 +263,10 @@ impl ModelManager {
         // Update manifest
         self.update_manifest_for_model(model_type)?;
 
-        info!("Successfully downloaded {} model", model_type.display_name());
+        info!(
+            "Successfully downloaded {} model",
+            model_type.display_name()
+        );
         Ok(())
     }
 
@@ -281,11 +290,7 @@ impl ModelManager {
             .context("Failed to send download request")?;
 
         if !response.status().is_success() {
-            anyhow::bail!(
-                "Download failed with status {}: {}",
-                response.status(),
-                url
-            );
+            anyhow::bail!("Download failed with status {}: {}", response.status(), url);
         }
 
         let total_size = response.content_length();
@@ -293,8 +298,7 @@ impl ModelManager {
 
         // Create temp file for download
         let temp_path = path.with_extension("tmp");
-        let mut file = std::fs::File::create(&temp_path)
-            .context("Failed to create temp file")?;
+        let mut file = std::fs::File::create(&temp_path).context("Failed to create temp file")?;
 
         let mut hasher = Sha256::new();
         let mut downloaded: u64 = 0;
@@ -364,7 +368,11 @@ impl ModelManager {
         };
 
         // Update or add model info
-        if let Some(existing) = manifest.models.iter_mut().find(|m| m.filename == model_info.filename) {
+        if let Some(existing) = manifest
+            .models
+            .iter_mut()
+            .find(|m| m.filename == model_info.filename)
+        {
             *existing = model_info;
         } else {
             manifest.models.push(model_info);
@@ -379,11 +387,18 @@ impl ModelManager {
     where
         F: FnMut(ModelType, u64, Option<u64>),
     {
-        let models = [ModelType::Detection, ModelType::Recognition, ModelType::Dictionary];
+        let models = [
+            ModelType::Detection,
+            ModelType::Recognition,
+            ModelType::Dictionary,
+        ];
 
         for model_type in models {
             if self.is_model_available(model_type) {
-                info!("Model {:?} already available, skipping download", model_type);
+                info!(
+                    "Model {:?} already available, skipping download",
+                    model_type
+                );
                 continue;
             }
 
@@ -468,7 +483,10 @@ impl OnnxSession {
 
     /// Create session with GPU acceleration if available
     pub fn new_with_gpu(model_path: &Path) -> Result<Self> {
-        info!("Loading ONNX model with GPU acceleration from {:?}", model_path);
+        info!(
+            "Loading ONNX model with GPU acceleration from {:?}",
+            model_path
+        );
 
         // Try DirectML first (Windows), then CUDA, then fall back to CPU
         let session_builder = Session::builder()?
@@ -479,9 +497,9 @@ impl OnnxSession {
         #[cfg(target_os = "windows")]
         let session_builder = {
             use ort::execution_providers::DirectMLExecutionProvider;
-            match session_builder.with_execution_providers([
-                DirectMLExecutionProvider::default().build(),
-            ]) {
+            match session_builder
+                .with_execution_providers([DirectMLExecutionProvider::default().build()])
+            {
                 Ok(builder) => {
                     info!("DirectML GPU acceleration enabled");
                     builder
@@ -582,7 +600,7 @@ pub struct TensorInfo {
 fn extract_shape(value_type: &ort::value::ValueType) -> Vec<i64> {
     // Use the tensor_shape() helper method
     if let Some(shape) = value_type.tensor_shape() {
-        shape.iter().map(|&d| d).collect()
+        shape.iter().copied().collect()
     } else {
         vec![]
     }

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Windows OCR API backend
 //!
 //! Uses the built-in Windows OCR (Media.Ocr) for fast, accurate text recognition.
@@ -53,7 +54,10 @@ pub struct WindowsOcr {
 impl WindowsOcr {
     /// Create a new Windows OCR engine with the specified language
     pub fn new(language_tag: &str) -> Result<Self> {
-        info!("Initializing Windows OCR engine with language: {}", language_tag);
+        info!(
+            "Initializing Windows OCR engine with language: {}",
+            language_tag
+        );
 
         let language = Language::CreateLanguage(&HSTRING::from(language_tag))
             .context("Failed to create language")?;
@@ -62,13 +66,18 @@ impl WindowsOcr {
         if !WinOcrEngine::IsLanguageSupported(&language)
             .context("Failed to check language support")?
         {
-            warn!("Language '{}' not supported, falling back to system default", language_tag);
+            warn!(
+                "Language '{}' not supported, falling back to system default",
+                language_tag
+            );
             let engine = WinOcrEngine::TryCreateFromUserProfileLanguages()
                 .context("Failed to create OCR engine from user profile")?;
 
-            let recognizer_lang = engine.RecognizerLanguage()
+            let recognizer_lang = engine
+                .RecognizerLanguage()
                 .context("Failed to get recognizer language")?;
-            let lang_tag = recognizer_lang.LanguageTag()
+            let lang_tag = recognizer_lang
+                .LanguageTag()
                 .context("Failed to get language tag")?
                 .to_string();
 
@@ -118,7 +127,12 @@ impl WindowsOcr {
     }
 
     /// Recognize text in an RGBA image buffer
-    pub fn recognize(&self, image_data: &[u8], width: u32, height: u32) -> Result<Vec<WindowsOcrResult>> {
+    pub fn recognize(
+        &self,
+        image_data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<Vec<WindowsOcrResult>> {
         if image_data.is_empty() || width == 0 || height == 0 {
             return Ok(vec![]);
         }
@@ -158,7 +172,8 @@ impl WindowsOcr {
         let ocr_result = run_ocr_sync(&self.engine, &bitmap)?;
 
         // Get full text
-        let text = ocr_result.Text()
+        let text = ocr_result
+            .Text()
             .context("Failed to get OCR text")?
             .to_string();
 
@@ -170,7 +185,12 @@ impl WindowsOcr {
     /// Returns a `WindowsOcrFullResult` containing:
     /// - `full_text`: The complete text from the image
     /// - `lines`: Each line with its text, bounds, and individual words
-    pub fn recognize_full(&self, image_data: &[u8], width: u32, height: u32) -> Result<WindowsOcrFullResult> {
+    pub fn recognize_full(
+        &self,
+        image_data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<WindowsOcrFullResult> {
         if image_data.is_empty() || width == 0 || height == 0 {
             return Ok(WindowsOcrFullResult {
                 full_text: String::new(),
@@ -178,7 +198,10 @@ impl WindowsOcr {
             });
         }
 
-        debug!("Windows OCR: Processing {}x{} image (full results)", width, height);
+        debug!(
+            "Windows OCR: Processing {}x{} image (full results)",
+            width, height
+        );
 
         // Convert RGBA to BGRA (Windows expects BGRA)
         let bgra_data = rgba_to_bgra(image_data);
@@ -190,14 +213,16 @@ impl WindowsOcr {
         let ocr_result = run_ocr_sync(&self.engine, &bitmap)?;
 
         // Get full text
-        let full_text = ocr_result.Text()
+        let full_text = ocr_result
+            .Text()
             .context("Failed to get OCR text")?
             .to_string();
 
         // Extract line and word results
         let lines = extract_full_results(&ocr_result)?;
 
-        debug!("Windows OCR: Found {} lines, {} total words",
+        debug!(
+            "Windows OCR: Found {} lines, {} total words",
             lines.len(),
             lines.iter().map(|l| l.words.len()).sum::<usize>()
         );
@@ -221,22 +246,46 @@ fn create_software_bitmap(bgra_data: &[u8], width: u32, height: u32) -> Result<S
 
     let stream = InMemoryRandomAccessStream::new().context("Failed to create in-memory stream")?;
     let writer = DataWriter::CreateDataWriter(&stream).context("Failed to create data writer")?;
-    writer.WriteBytes(bgra_data).context("Failed to write pixel data")?;
-    writer.StoreAsync().context("Failed to start store operation")?.get().context("Failed to store data")?;
-    writer.FlushAsync().context("Failed to start flush operation")?.get().context("Failed to flush data")?;
+    writer
+        .WriteBytes(bgra_data)
+        .context("Failed to write pixel data")?;
+    writer
+        .StoreAsync()
+        .context("Failed to start store operation")?
+        .get()
+        .context("Failed to store data")?;
+    writer
+        .FlushAsync()
+        .context("Failed to start flush operation")?
+        .get()
+        .context("Failed to flush data")?;
     stream.Seek(0).context("Failed to seek stream")?;
-    let bitmap = SoftwareBitmap::Create(BitmapPixelFormat::Bgra8, width as i32, height as i32).context("Failed to create SoftwareBitmap")?;
-    let input_stream = stream.GetInputStreamAt(0).context("Failed to get input stream")?;
-    let reader = windows::Storage::Streams::DataReader::CreateDataReader(&input_stream).context("Failed to create data reader")?;
-    reader.LoadAsync(bgra_data.len() as u32).context("Failed to start load operation")?.get().context("Failed to load data")?;
-    let buffer = reader.ReadBuffer(bgra_data.len() as u32).context("Failed to read buffer")?;
-    bitmap.CopyFromBuffer(&buffer).context("Failed to copy buffer to bitmap")?;
+    let bitmap = SoftwareBitmap::Create(BitmapPixelFormat::Bgra8, width as i32, height as i32)
+        .context("Failed to create SoftwareBitmap")?;
+    let input_stream = stream
+        .GetInputStreamAt(0)
+        .context("Failed to get input stream")?;
+    let reader = windows::Storage::Streams::DataReader::CreateDataReader(&input_stream)
+        .context("Failed to create data reader")?;
+    reader
+        .LoadAsync(bgra_data.len() as u32)
+        .context("Failed to start load operation")?
+        .get()
+        .context("Failed to load data")?;
+    let buffer = reader
+        .ReadBuffer(bgra_data.len() as u32)
+        .context("Failed to read buffer")?;
+    bitmap
+        .CopyFromBuffer(&buffer)
+        .context("Failed to copy buffer to bitmap")?;
     Ok(bitmap)
 }
 
 /// Run OCR synchronously (blocks until complete)
 fn run_ocr_sync(engine: &WinOcrEngine, bitmap: &SoftwareBitmap) -> Result<WinOcrResult> {
-    let async_op: IAsyncOperation<WinOcrResult> = engine.RecognizeAsync(bitmap).context("Failed to start OCR recognition")?;
+    let async_op: IAsyncOperation<WinOcrResult> = engine
+        .RecognizeAsync(bitmap)
+        .context("Failed to start OCR recognition")?;
     let result = async_op.get().context("OCR recognition failed")?;
     Ok(result)
 }
@@ -286,7 +335,10 @@ fn extract_full_results(ocr_result: &WinOcrResult) -> Result<Vec<WindowsOcrLine>
         let mut max_x = 0u32;
         let mut max_y = 0u32;
 
-        for j in 0..words_collection.Size().context("Failed to get words size")? {
+        for j in 0..words_collection
+            .Size()
+            .context("Failed to get words size")?
+        {
             let word = words_collection.GetAt(j).context("Failed to get word")?;
             let text = word.Text().context("Failed to get word text")?.to_string();
             let rect = word.BoundingRect().context("Failed to get bounding rect")?;

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Vision/OCR Layer
 //!
 //! Performs text extraction and visual element detection on captured frames.
@@ -13,7 +14,7 @@ pub mod preprocess;
 pub mod screen_recognition;
 pub mod windows_ocr;
 
-pub use ocr_preprocess::{PreprocessResult, apply_preprocessing_with_scale};
+pub use ocr_preprocess::apply_preprocessing_with_scale;
 
 use anyhow::Result;
 use std::time::Instant;
@@ -21,10 +22,10 @@ use tracing::{debug, info};
 
 use crate::capture::frame::CapturedFrame;
 
-pub use models::{ModelManager, ModelType, OnnxSession};
-pub use ocr::{OcrEngine, OcrResult};
-pub use screen_recognition::{ScreenRecognizer, ScreenRecognitionConfig, ScreenMatch, AnchorMatch, ScreenNode};
-pub use windows_ocr::{WindowsOcr, WindowsOcrResult, WindowsOcrLine, WindowsOcrFullResult};
+pub use models::{ModelManager, ModelType};
+pub use ocr::OcrEngine;
+pub use screen_recognition::{ScreenMatch, ScreenRecognizer};
+pub use windows_ocr::WindowsOcr;
 
 /// OCR backend selection
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
@@ -209,16 +210,22 @@ impl VisionPipeline {
     }
 
     /// Process a captured frame with specified granularity (word or line level)
-    pub fn process_with_granularity(&mut self, frame: &CapturedFrame, granularity: OcrGranularity) -> Result<VisionResult> {
+    pub fn process_with_granularity(
+        &mut self,
+        frame: &CapturedFrame,
+        granularity: OcrGranularity,
+    ) -> Result<VisionResult> {
         let start = Instant::now();
 
         let text_regions = match self.config.backend {
-            OcrBackend::WindowsOcr => {
-                match granularity {
-                    OcrGranularity::Word => self.process_windows_ocr(&frame.data, frame.width, frame.height)?,
-                    OcrGranularity::Line => self.process_windows_ocr_lines(&frame.data, frame.width, frame.height)?,
+            OcrBackend::WindowsOcr => match granularity {
+                OcrGranularity::Word => {
+                    self.process_windows_ocr(&frame.data, frame.width, frame.height)?
                 }
-            }
+                OcrGranularity::Line => {
+                    self.process_windows_ocr_lines(&frame.data, frame.width, frame.height)?
+                }
+            },
             OcrBackend::PaddleOcr => {
                 // PaddleOCR already returns line-level results, so we use the same for both
                 self.process_paddle_ocr(&frame.data, frame.width, frame.height)?
@@ -261,14 +268,20 @@ impl VisionPipeline {
     }
 
     /// Process using Windows OCR (line-level)
-    fn process_windows_ocr_lines(&self, data: &[u8], width: u32, height: u32) -> Result<Vec<TextRegion>> {
+    fn process_windows_ocr_lines(
+        &self,
+        data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<Vec<TextRegion>> {
         let Some(ocr) = &self.windows_ocr else {
             return Ok(vec![]);
         };
 
         let full_result = ocr.recognize_full(data, width, height)?;
 
-        Ok(full_result.lines
+        Ok(full_result
+            .lines
             .into_iter()
             .map(|line| TextRegion {
                 text: line.text,
@@ -279,7 +292,12 @@ impl VisionPipeline {
     }
 
     /// Process using PaddleOCR
-    fn process_paddle_ocr(&mut self, data: &[u8], width: u32, height: u32) -> Result<Vec<TextRegion>> {
+    fn process_paddle_ocr(
+        &mut self,
+        data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<Vec<TextRegion>> {
         let Some(ocr) = &mut self.paddle_ocr else {
             return Ok(vec![]);
         };
@@ -320,7 +338,8 @@ impl VisionPipeline {
         preprocessing: Option<&crate::config::OcrPreprocessing>,
     ) -> Result<VisionResult> {
         // Extract the region from the frame
-        let region_data = extract_region(&frame.data, frame.width, frame.height, x, y, width, height);
+        let region_data =
+            extract_region(&frame.data, frame.width, frame.height, x, y, width, height);
 
         // Determine auto-upscale factor for small regions
         // Windows OCR needs ~40+ pixel height for reliable detection
@@ -328,7 +347,7 @@ impl VisionPipeline {
         let auto_scale = if height < MIN_OCR_DIMENSION || width < MIN_OCR_DIMENSION {
             let height_scale = (MIN_OCR_DIMENSION as f32 / height as f32).ceil() as u32;
             let width_scale = (MIN_OCR_DIMENSION as f32 / width as f32).ceil() as u32;
-            height_scale.max(width_scale).max(2).min(4) // Scale 2x-4x for small regions
+            height_scale.max(width_scale).clamp(2, 4) // Scale 2x-4x for small regions
         } else {
             1
         };
@@ -344,7 +363,8 @@ impl VisionPipeline {
                 );
                 let mut adjusted_pp = pp.clone();
                 adjusted_pp.scale = effective_scale;
-                let result = apply_preprocessing_with_scale(&region_data, width, height, &adjusted_pp);
+                let result =
+                    apply_preprocessing_with_scale(&region_data, width, height, &adjusted_pp);
                 (result.data, result.width, result.height)
             } else {
                 let result = apply_preprocessing_with_scale(&region_data, width, height, pp);
@@ -373,7 +393,11 @@ impl VisionPipeline {
             OcrBackend::WindowsOcr => {
                 let results = self.process_windows_ocr(&processed_data, proc_width, proc_height)?;
                 // Offset bounds by region position (scale back if preprocessing scaled)
-                let scale_factor = if proc_width != width { width as f32 / proc_width as f32 } else { 1.0 };
+                let scale_factor = if proc_width != width {
+                    width as f32 / proc_width as f32
+                } else {
+                    1.0
+                };
                 results
                     .into_iter()
                     .map(|r| TextRegion {
@@ -390,7 +414,11 @@ impl VisionPipeline {
             }
             OcrBackend::PaddleOcr => {
                 let results = self.process_paddle_ocr(&processed_data, proc_width, proc_height)?;
-                let scale_factor = if proc_width != width { width as f32 / proc_width as f32 } else { 1.0 };
+                let scale_factor = if proc_width != width {
+                    width as f32 / proc_width as f32
+                } else {
+                    1.0
+                };
                 results
                     .into_iter()
                     .map(|r| TextRegion {
@@ -441,8 +469,14 @@ fn polygon_to_bounds(polygon: &[(f32, f32)]) -> (u32, u32, u32, u32) {
 
     let min_x = polygon.iter().map(|p| p.0).fold(f32::INFINITY, f32::min);
     let min_y = polygon.iter().map(|p| p.1).fold(f32::INFINITY, f32::min);
-    let max_x = polygon.iter().map(|p| p.0).fold(f32::NEG_INFINITY, f32::max);
-    let max_y = polygon.iter().map(|p| p.1).fold(f32::NEG_INFINITY, f32::max);
+    let max_x = polygon
+        .iter()
+        .map(|p| p.0)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let max_y = polygon
+        .iter()
+        .map(|p| p.1)
+        .fold(f32::NEG_INFINITY, f32::max);
 
     (
         min_x as u32,

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 /// Application settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
     /// General settings
     pub general: GeneralConfig,
@@ -23,19 +23,6 @@ pub struct AppConfig {
     /// Dashboard UI settings
     #[serde(default)]
     pub dashboard: DashboardSettings,
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            general: GeneralConfig::default(),
-            capture: CaptureSettings::default(),
-            overlay: OverlaySettings::default(),
-            performance: PerformanceConfig::default(),
-            vision: VisionSettings::default(),
-            dashboard: DashboardSettings::default(),
-        }
-    }
 }
 
 /// General application settings
@@ -403,10 +390,16 @@ mod tests {
         let parsed: AppConfig = toml::from_str(&toml_str).unwrap();
 
         // Verify values match
-        assert_eq!(config.general.start_minimized, parsed.general.start_minimized);
+        assert_eq!(
+            config.general.start_minimized,
+            parsed.general.start_minimized
+        );
         assert_eq!(config.capture.max_fps, parsed.capture.max_fps);
         assert_eq!(config.overlay.enabled, parsed.overlay.enabled);
-        assert_eq!(config.performance.max_memory_mb, parsed.performance.max_memory_mb);
+        assert_eq!(
+            config.performance.max_memory_mb,
+            parsed.performance.max_memory_mb
+        );
     }
 
     #[test]

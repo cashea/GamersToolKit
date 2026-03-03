@@ -1,9 +1,10 @@
+#![allow(dead_code)]
 //! Dashboard view state management
 
-use std::collections::HashMap;
-use std::time::Instant;
 use crate::config::DashboardViewSetting;
 use crate::storage::profiles::{GameProfile, OcrRegion};
+use std::collections::HashMap;
+use std::time::Instant;
 
 /// OCR result granularity - word-level or line-level
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -56,7 +57,7 @@ impl DashboardView {
     }
 
     /// Convert to persistable setting
-    pub fn to_setting(&self) -> DashboardViewSetting {
+    pub fn to_setting(self) -> DashboardViewSetting {
         match self {
             DashboardView::Home => DashboardViewSetting::Home,
             DashboardView::Capture => DashboardViewSetting::Capture,
@@ -125,6 +126,7 @@ pub struct HomeViewState {
 }
 
 /// Capture view state
+#[derive(Default)]
 pub struct CaptureViewState {
     /// Available windows for capture
     pub available_windows: Vec<String>,
@@ -159,26 +161,12 @@ impl std::fmt::Debug for CaptureViewState {
             .field("search_query", &self.search_query)
             .field("preview_enabled", &self.preview_enabled)
             .field("last_refresh", &self.last_refresh)
-            .field("preview_texture", &self.preview_texture.as_ref().map(|_| "<texture>"))
+            .field(
+                "preview_texture",
+                &self.preview_texture.as_ref().map(|_| "<texture>"),
+            )
             .field("preview_frame_size", &self.preview_frame_size)
             .finish()
-    }
-}
-
-impl Default for CaptureViewState {
-    fn default() -> Self {
-        Self {
-            available_windows: Vec::new(),
-            available_monitors: Vec::new(),
-            target_type: 0,
-            selected_window: None,
-            selected_monitor: None,
-            search_query: String::new(),
-            preview_enabled: false,
-            last_refresh: None,
-            preview_texture: None,
-            preview_frame_size: None,
-        }
     }
 }
 
@@ -280,7 +268,7 @@ impl Default for VisionViewState {
     fn default() -> Self {
         Self {
             selected_backend: crate::vision::OcrBackend::WindowsOcr, // Default to Windows OCR
-            ocr_granularity: OcrGranularity::Word, // Default to word-level
+            ocr_granularity: OcrGranularity::Word,                   // Default to word-level
             models_ready: false,
             detection_model_ready: false,
             recognition_model_ready: false,
@@ -467,6 +455,9 @@ pub enum SettingsSection {
     Performance,
 }
 
+/// Pending text anchor data: (screen_id, detected_text, bounds)
+pub type PendingTextAnchor = Option<(String, String, (f32, f32, f32, f32))>;
+
 /// Screen recognition view state
 #[derive(Default)]
 pub struct ScreensViewState {
@@ -497,7 +488,7 @@ pub struct ScreensViewState {
     /// Preview texture for current screen template
     pub preview_texture: Option<egui::TextureHandle>,
     /// Pending text anchor waiting for user confirmation: (screen_id, detected_text, bounds)
-    pub pending_text_for_anchor: Option<(String, String, (f32, f32, f32, f32))>,
+    pub pending_text_for_anchor: PendingTextAnchor,
     /// Editable text field for text anchor confirmation dialog
     pub editing_text_anchor_text: String,
     /// Screen ID being dragged for priority reordering

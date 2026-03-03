@@ -4,8 +4,8 @@ use egui::RichText;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
-use crate::dashboard::state::{ProfilesViewState, ProfileAction};
-use crate::dashboard::theme::{ThemeColors, color_with_alpha};
+use crate::dashboard::state::{ProfileAction, ProfilesViewState};
+use crate::dashboard::theme::{color_with_alpha, ThemeColors};
 use crate::shared::SharedAppState;
 use crate::storage::profiles::GameProfile;
 
@@ -20,7 +20,7 @@ pub fn render_profiles_view(
     ui.label(
         RichText::new("Manage game-specific detection and rules")
             .size(14.0)
-            .color(ThemeColors::TEXT_SECONDARY)
+            .color(ThemeColors::TEXT_SECONDARY),
     );
 
     ui.add_space(24.0);
@@ -33,19 +33,19 @@ pub fn render_profiles_view(
         ui.add(
             egui::TextEdit::singleline(&mut view_state.search_query)
                 .hint_text("Filter profiles...")
-                .desired_width(200.0)
+                .desired_width(200.0),
         );
 
         ui.add_space(16.0);
 
         // Create new profile button
-        if ui.add(
-            egui::Button::new(
-                RichText::new("+ New Profile")
-                    .color(egui::Color32::WHITE)
+        if ui
+            .add(
+                egui::Button::new(RichText::new("+ New Profile").color(egui::Color32::WHITE))
+                    .fill(ThemeColors::ACCENT_PRIMARY),
             )
-            .fill(ThemeColors::ACCENT_PRIMARY)
-        ).clicked() {
+            .clicked()
+        {
             view_state.show_create_dialog = true;
             view_state.new_profile_name.clear();
             view_state.new_profile_executable.clear();
@@ -68,7 +68,8 @@ pub fn render_profiles_view(
                 let state = shared_state.read();
                 let filter = view_state.search_query.to_lowercase();
 
-                let filtered_profiles: Vec<_> = state.profiles
+                let filtered_profiles: Vec<_> = state
+                    .profiles
                     .iter()
                     .filter(|p| filter.is_empty() || p.name.to_lowercase().contains(&filter))
                     .collect();
@@ -81,26 +82,27 @@ pub fn render_profiles_view(
                                 ui.label(
                                     RichText::new("No profiles yet")
                                         .size(16.0)
-                                        .color(ThemeColors::TEXT_MUTED)
+                                        .color(ThemeColors::TEXT_MUTED),
                                 );
                                 ui.add_space(8.0);
                                 ui.label(
                                     RichText::new("Create your first game profile to get started")
                                         .size(12.0)
-                                        .color(ThemeColors::TEXT_MUTED)
+                                        .color(ThemeColors::TEXT_MUTED),
                                 );
                             });
                         } else {
                             ui.label(
                                 RichText::new("No profiles match your search")
-                                    .color(ThemeColors::TEXT_MUTED)
+                                    .color(ThemeColors::TEXT_MUTED),
                             );
                         }
                     });
                 } else {
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         for profile in filtered_profiles {
-                            let is_selected = view_state.selected_profile_id.as_ref() == Some(&profile.id);
+                            let is_selected =
+                                view_state.selected_profile_id.as_ref() == Some(&profile.id);
                             let is_active = state.active_profile_id.as_ref() == Some(&profile.id);
 
                             render_profile_card(ui, profile, is_selected, is_active, view_state);
@@ -173,7 +175,7 @@ fn render_profile_card(
                             ui.label(
                                 RichText::new("Active")
                                     .size(10.0)
-                                    .color(ThemeColors::ACCENT_SUCCESS)
+                                    .color(ThemeColors::ACCENT_SUCCESS),
                             );
                         }
                     });
@@ -181,7 +183,7 @@ fn render_profile_card(
                     ui.label(
                         RichText::new(format!("v{}", profile.version))
                             .size(11.0)
-                            .color(ThemeColors::TEXT_MUTED)
+                            .color(ThemeColors::TEXT_MUTED),
                     );
 
                     let exe_count = profile.executables.len();
@@ -189,11 +191,12 @@ fn render_profile_card(
                     ui.label(
                         RichText::new(format!("{} exe(s), {} rule(s)", exe_count, rule_count))
                             .size(11.0)
-                            .color(ThemeColors::TEXT_MUTED)
+                            .color(ThemeColors::TEXT_MUTED),
                     );
                 });
             });
-        }).response;
+        })
+        .response;
 
     if response.interact(egui::Sense::click()).clicked() {
         view_state.selected_profile_id = Some(profile.id.clone());
@@ -212,7 +215,7 @@ fn render_profile_details(
     ui.label(
         RichText::new(format!("Version {}", profile.version))
             .size(12.0)
-            .color(ThemeColors::TEXT_MUTED)
+            .color(ThemeColors::TEXT_MUTED),
     );
 
     ui.add_space(16.0);
@@ -230,7 +233,7 @@ fn render_profile_details(
         ui.label(
             RichText::new("No executables defined")
                 .size(12.0)
-                .color(ThemeColors::TEXT_MUTED)
+                .color(ThemeColors::TEXT_MUTED),
         );
     }
 
@@ -242,7 +245,7 @@ fn render_profile_details(
     ui.label(
         RichText::new(format!("{} region(s) defined", profile.ocr_regions.len()))
             .size(12.0)
-            .color(ThemeColors::TEXT_SECONDARY)
+            .color(ThemeColors::TEXT_SECONDARY),
     );
 
     ui.add_space(16.0);
@@ -257,7 +260,11 @@ fn render_profile_details(
             } else {
                 ThemeColors::TEXT_MUTED
             };
-            ui.label(RichText::new(if rule.enabled { "[ON]" } else { "[OFF]" }).color(status_color).size(10.0));
+            ui.label(
+                RichText::new(if rule.enabled { "[ON]" } else { "[OFF]" })
+                    .color(status_color)
+                    .size(10.0),
+            );
             ui.label(&rule.name);
         });
     }
@@ -265,7 +272,7 @@ fn render_profile_details(
         ui.label(
             RichText::new("No rules defined")
                 .size(12.0)
-                .color(ThemeColors::TEXT_MUTED)
+                .color(ThemeColors::TEXT_MUTED),
         );
     }
 
@@ -276,35 +283,33 @@ fn render_profile_details(
         let is_active = state.active_profile_id.as_ref() == Some(&profile.id);
 
         if is_active {
-            if ui.add(
-                egui::Button::new("Deactivate")
-                    .min_size(egui::vec2(100.0, 32.0))
-            ).clicked() {
+            if ui
+                .add(egui::Button::new("Deactivate").min_size(egui::vec2(100.0, 32.0)))
+                .clicked()
+            {
                 view_state.pending_action = Some(ProfileAction::Deactivate);
             }
-        } else {
-            if ui.add(
-                egui::Button::new(
-                    RichText::new("Activate")
-                        .color(egui::Color32::WHITE)
-                )
-                .fill(ThemeColors::ACCENT_SUCCESS)
-                .min_size(egui::vec2(100.0, 32.0))
-            ).clicked() {
-                view_state.pending_action = Some(ProfileAction::Activate(profile.id.clone()));
-            }
+        } else if ui
+            .add(
+                egui::Button::new(RichText::new("Activate").color(egui::Color32::WHITE))
+                    .fill(ThemeColors::ACCENT_SUCCESS)
+                    .min_size(egui::vec2(100.0, 32.0)),
+            )
+            .clicked()
+        {
+            view_state.pending_action = Some(ProfileAction::Activate(profile.id.clone()));
         }
 
         ui.add_space(8.0);
 
-        if ui.add(
-            egui::Button::new(
-                RichText::new("Delete")
-                    .color(egui::Color32::WHITE)
+        if ui
+            .add(
+                egui::Button::new(RichText::new("Delete").color(egui::Color32::WHITE))
+                    .fill(ThemeColors::ACCENT_ERROR)
+                    .min_size(egui::vec2(80.0, 32.0)),
             )
-            .fill(ThemeColors::ACCENT_ERROR)
-            .min_size(egui::vec2(80.0, 32.0))
-        ).clicked() {
+            .clicked()
+        {
             view_state.show_delete_confirm = true;
         }
     });
@@ -318,13 +323,13 @@ fn render_no_selection(ui: &mut egui::Ui) {
             ui.label(
                 RichText::new("Select a profile")
                     .size(16.0)
-                    .color(ThemeColors::TEXT_MUTED)
+                    .color(ThemeColors::TEXT_MUTED),
             );
             ui.add_space(8.0);
             ui.label(
                 RichText::new("Choose a profile from the list to view details")
                     .size(12.0)
-                    .color(ThemeColors::TEXT_MUTED)
+                    .color(ThemeColors::TEXT_MUTED),
             );
         });
     });
@@ -334,7 +339,7 @@ fn render_no_selection(ui: &mut egui::Ui) {
 fn render_create_dialog(
     ui: &mut egui::Ui,
     view_state: &mut ProfilesViewState,
-    shared_state: &Arc<RwLock<SharedAppState>>,
+    _shared_state: &Arc<RwLock<SharedAppState>>,
 ) {
     egui::Window::new("Create New Profile")
         .collapsible(false)
@@ -366,18 +371,21 @@ fn render_create_dialog(
 
                 let can_create = !view_state.new_profile_name.is_empty();
                 ui.add_enabled_ui(can_create, |ui| {
-                    if ui.add(
-                        egui::Button::new(
-                            RichText::new("Create")
-                                .color(egui::Color32::WHITE)
+                    if ui
+                        .add(
+                            egui::Button::new(RichText::new("Create").color(egui::Color32::WHITE))
+                                .fill(ThemeColors::ACCENT_PRIMARY),
                         )
-                        .fill(ThemeColors::ACCENT_PRIMARY)
-                    ).clicked() {
+                        .clicked()
+                    {
                         let new_profile = GameProfile {
-                            id: format!("profile_{}", std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap()
-                                .as_secs()),
+                            id: format!(
+                                "profile_{}",
+                                std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs()
+                            ),
                             name: view_state.new_profile_name.clone(),
                             executables: if view_state.new_profile_executable.is_empty() {
                                 vec![]
@@ -408,7 +416,7 @@ fn render_create_dialog(
 fn render_delete_confirm_dialog(
     ui: &mut egui::Ui,
     view_state: &mut ProfilesViewState,
-    shared_state: &Arc<RwLock<SharedAppState>>,
+    _shared_state: &Arc<RwLock<SharedAppState>>,
 ) {
     egui::Window::new("Confirm Delete")
         .collapsible(false)
@@ -417,8 +425,7 @@ fn render_delete_confirm_dialog(
         .show(ui.ctx(), |ui| {
             ui.label("Are you sure you want to delete this profile?");
             ui.label(
-                RichText::new("This action cannot be undone.")
-                    .color(ThemeColors::ACCENT_WARNING)
+                RichText::new("This action cannot be undone.").color(ThemeColors::ACCENT_WARNING),
             );
 
             ui.add_space(16.0);
@@ -430,13 +437,13 @@ fn render_delete_confirm_dialog(
 
                 ui.add_space(8.0);
 
-                if ui.add(
-                    egui::Button::new(
-                        RichText::new("Delete")
-                            .color(egui::Color32::WHITE)
+                if ui
+                    .add(
+                        egui::Button::new(RichText::new("Delete").color(egui::Color32::WHITE))
+                            .fill(ThemeColors::ACCENT_ERROR),
                     )
-                    .fill(ThemeColors::ACCENT_ERROR)
-                ).clicked() {
+                    .clicked()
+                {
                     if let Some(profile_id) = view_state.selected_profile_id.take() {
                         // Queue profile deletion action (will be deleted from disk by DashboardApp)
                         view_state.pending_action = Some(ProfileAction::Delete(profile_id));

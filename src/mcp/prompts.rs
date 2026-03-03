@@ -126,8 +126,7 @@ impl CreateGameProfilePrompt {
         arguments: Option<std::collections::HashMap<String, String>>,
     ) -> Result<GetPromptResult, rust_mcp_schema::RpcError> {
         let state = shared_state.read();
-        let existing_profiles: Vec<&str> =
-            state.profiles.iter().map(|p| p.name.as_str()).collect();
+        let existing_profiles: Vec<&str> = state.profiles.iter().map(|p| p.name.as_str()).collect();
 
         let game_name = arguments
             .as_ref()

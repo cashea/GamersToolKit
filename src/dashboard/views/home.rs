@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::dashboard::components::status_card::{CardStatus, StatusCard};
 use crate::dashboard::state::HomeViewState;
-use crate::dashboard::theme::{ThemeColors, color_with_alpha};
+use crate::dashboard::theme::{color_with_alpha, ThemeColors};
 use crate::shared::{CaptureCommand, OverlayCommand, SharedAppState};
 
 /// Render the home view
@@ -22,7 +22,7 @@ pub fn render_home_view(
     ui.label(
         RichText::new("Monitor and control your GamersToolKit instance")
             .size(14.0)
-            .color(ThemeColors::TEXT_SECONDARY)
+            .color(ThemeColors::TEXT_SECONDARY),
     );
 
     ui.add_space(24.0);
@@ -94,18 +94,25 @@ pub fn render_home_view(
     ui.horizontal(|ui| {
         // Start/Stop Capture button
         let is_capturing = shared_state.read().runtime.is_capturing;
-        let capture_btn_text = if is_capturing { "Stop Capture" } else { "Start Capture" };
+        let capture_btn_text = if is_capturing {
+            "Stop Capture"
+        } else {
+            "Start Capture"
+        };
         let capture_btn_color = if is_capturing {
             ThemeColors::ACCENT_ERROR
         } else {
             ThemeColors::ACCENT_SUCCESS
         };
 
-        if ui.add(
-            egui::Button::new(RichText::new(capture_btn_text).color(egui::Color32::WHITE))
-                .fill(capture_btn_color)
-                .min_size(egui::vec2(120.0, 36.0))
-        ).clicked() {
+        if ui
+            .add(
+                egui::Button::new(RichText::new(capture_btn_text).color(egui::Color32::WHITE))
+                    .fill(capture_btn_color)
+                    .min_size(egui::vec2(120.0, 36.0)),
+            )
+            .clicked()
+        {
             let mut state = shared_state.write();
             state.runtime.capture_command = Some(if is_capturing {
                 CaptureCommand::Stop
@@ -118,18 +125,25 @@ pub fn render_home_view(
 
         // Start/Stop Overlay button
         let is_overlay_running = shared_state.read().runtime.is_overlay_running;
-        let overlay_btn_text = if is_overlay_running { "Stop Overlay" } else { "Start Overlay" };
+        let overlay_btn_text = if is_overlay_running {
+            "Stop Overlay"
+        } else {
+            "Start Overlay"
+        };
         let overlay_btn_color = if is_overlay_running {
             ThemeColors::ACCENT_ERROR
         } else {
             ThemeColors::ACCENT_SUCCESS
         };
 
-        if ui.add(
-            egui::Button::new(RichText::new(overlay_btn_text).color(egui::Color32::WHITE))
-                .fill(overlay_btn_color)
-                .min_size(egui::vec2(120.0, 36.0))
-        ).clicked() {
+        if ui
+            .add(
+                egui::Button::new(RichText::new(overlay_btn_text).color(egui::Color32::WHITE))
+                    .fill(overlay_btn_color)
+                    .min_size(egui::vec2(120.0, 36.0)),
+            )
+            .clicked()
+        {
             let mut state = shared_state.write();
             state.runtime.overlay_command = Some(if is_overlay_running {
                 OverlayCommand::Stop
@@ -143,12 +157,16 @@ pub fn render_home_view(
         // Show/Hide Overlay button (only when overlay is running)
         if is_overlay_running {
             let overlay_visible = shared_state.read().runtime.overlay_visible;
-            let visibility_btn_text = if overlay_visible { "Hide Overlay" } else { "Show Overlay" };
+            let visibility_btn_text = if overlay_visible {
+                "Hide Overlay"
+            } else {
+                "Show Overlay"
+            };
 
-            if ui.add(
-                egui::Button::new(visibility_btn_text)
-                    .min_size(egui::vec2(120.0, 36.0))
-            ).clicked() {
+            if ui
+                .add(egui::Button::new(visibility_btn_text).min_size(egui::vec2(120.0, 36.0)))
+                .clicked()
+            {
                 let mut state = shared_state.write();
                 state.runtime.overlay_command = Some(OverlayCommand::ToggleVisibility);
             }
@@ -157,14 +175,13 @@ pub fn render_home_view(
         }
 
         // Test Tip button (only when overlay is running)
-        if is_overlay_running {
-            if ui.add(
-                egui::Button::new("Send Test Tip")
-                    .min_size(egui::vec2(120.0, 36.0))
-            ).clicked() {
-                let mut state = shared_state.write();
-                state.runtime.send_test_tip = true;
-            }
+        if is_overlay_running
+            && ui
+                .add(egui::Button::new("Send Test Tip").min_size(egui::vec2(120.0, 36.0)))
+                .clicked()
+        {
+            let mut state = shared_state.write();
+            state.runtime.send_test_tip = true;
         }
     });
 
@@ -181,7 +198,13 @@ pub fn render_home_view(
         .spacing([40.0, 8.0])
         .show(ui, |ui| {
             ui.label(RichText::new("Capture Target:").color(ThemeColors::TEXT_MUTED));
-            ui.label(app_state.runtime.current_capture_target.as_deref().unwrap_or("Not set"));
+            ui.label(
+                app_state
+                    .runtime
+                    .current_capture_target
+                    .as_deref()
+                    .unwrap_or("Not set"),
+            );
             ui.end_row();
 
             ui.label(RichText::new("Max FPS:").color(ThemeColors::TEXT_MUTED));

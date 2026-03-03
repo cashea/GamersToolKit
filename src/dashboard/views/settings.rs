@@ -2,8 +2,8 @@
 
 use egui::RichText;
 use parking_lot::RwLock;
-use std::sync::Arc;
 use std::cell::Cell;
+use std::sync::Arc;
 
 use crate::dashboard::components::add_scroll_slider;
 use crate::dashboard::state::{SettingsSection, SettingsViewState};
@@ -21,7 +21,7 @@ pub fn render_settings_view(
     ui.label(
         RichText::new("Configure application behavior and preferences")
             .size(14.0)
-            .color(ThemeColors::TEXT_SECONDARY)
+            .color(ThemeColors::TEXT_SECONDARY),
     );
 
     ui.add_space(24.0);
@@ -37,15 +37,25 @@ pub fn render_settings_view(
             .rounding(egui::Rounding::same(8.0))
             .inner_margin(16.0)
             .show(ui, |ui| {
-                let header_response = ui.horizontal(|ui| {
-                    let arrow = if is_general_expanded { "v" } else { ">" };
-                    ui.label(RichText::new(arrow).size(12.0).color(ThemeColors::TEXT_MUTED));
-                    ui.add_space(8.0);
-                    ui.heading(RichText::new("General").size(16.0));
-                }).response;
+                let header_response = ui
+                    .horizontal(|ui| {
+                        let arrow = if is_general_expanded { "v" } else { ">" };
+                        ui.label(
+                            RichText::new(arrow)
+                                .size(12.0)
+                                .color(ThemeColors::TEXT_MUTED),
+                        );
+                        ui.add_space(8.0);
+                        ui.heading(RichText::new("General").size(16.0));
+                    })
+                    .response;
 
                 if header_response.interact(egui::Sense::click()).clicked() {
-                    view_state.expanded_section = if is_general_expanded { None } else { Some(SettingsSection::General) };
+                    view_state.expanded_section = if is_general_expanded {
+                        None
+                    } else {
+                        Some(SettingsSection::General)
+                    };
                 }
 
                 if is_general_expanded {
@@ -58,7 +68,10 @@ pub fn render_settings_view(
                     ui.horizontal(|ui| {
                         ui.label("Start minimized:");
                         ui.add_space(8.0);
-                        if ui.checkbox(&mut state.config.general.start_minimized, "").changed() {
+                        if ui
+                            .checkbox(&mut state.config.general.start_minimized, "")
+                            .changed()
+                        {
                             changed.set(true);
                         }
                     });
@@ -66,7 +79,10 @@ pub fn render_settings_view(
                     ui.horizontal(|ui| {
                         ui.label("Auto-start with Windows:");
                         ui.add_space(8.0);
-                        if ui.checkbox(&mut state.config.general.auto_start, "").changed() {
+                        if ui
+                            .checkbox(&mut state.config.general.auto_start, "")
+                            .changed()
+                        {
                             changed.set(true);
                         }
                     });
@@ -74,7 +90,10 @@ pub fn render_settings_view(
                     ui.horizontal(|ui| {
                         ui.label("Check for updates:");
                         ui.add_space(8.0);
-                        if ui.checkbox(&mut state.config.general.check_updates, "").changed() {
+                        if ui
+                            .checkbox(&mut state.config.general.check_updates, "")
+                            .changed()
+                        {
                             changed.set(true);
                         }
                     });
@@ -90,15 +109,25 @@ pub fn render_settings_view(
             .rounding(egui::Rounding::same(8.0))
             .inner_margin(16.0)
             .show(ui, |ui| {
-                let header_response = ui.horizontal(|ui| {
-                    let arrow = if is_capture_expanded { "v" } else { ">" };
-                    ui.label(RichText::new(arrow).size(12.0).color(ThemeColors::TEXT_MUTED));
-                    ui.add_space(8.0);
-                    ui.heading(RichText::new("Capture").size(16.0));
-                }).response;
+                let header_response = ui
+                    .horizontal(|ui| {
+                        let arrow = if is_capture_expanded { "v" } else { ">" };
+                        ui.label(
+                            RichText::new(arrow)
+                                .size(12.0)
+                                .color(ThemeColors::TEXT_MUTED),
+                        );
+                        ui.add_space(8.0);
+                        ui.heading(RichText::new("Capture").size(16.0));
+                    })
+                    .response;
 
                 if header_response.interact(egui::Sense::click()).clicked() {
-                    view_state.expanded_section = if is_capture_expanded { None } else { Some(SettingsSection::Capture) };
+                    view_state.expanded_section = if is_capture_expanded {
+                        None
+                    } else {
+                        Some(SettingsSection::Capture)
+                    };
                 }
 
                 if is_capture_expanded {
@@ -112,7 +141,16 @@ pub fn render_settings_view(
                         ui.label("Max FPS:");
                         ui.add_space(8.0);
                         let mut fps = state.config.capture.max_fps as f32;
-                        if add_scroll_slider(ui, &mut fps, 1.0..=60.0, Some(5.0), Some(" fps"), None).changed() {
+                        if add_scroll_slider(
+                            ui,
+                            &mut fps,
+                            1.0..=60.0,
+                            Some(5.0),
+                            Some(" fps"),
+                            None,
+                        )
+                        .changed()
+                        {
                             state.config.capture.max_fps = fps as u32;
                             changed.set(true);
                         }
@@ -121,7 +159,10 @@ pub fn render_settings_view(
                     ui.horizontal(|ui| {
                         ui.label("Capture cursor:");
                         ui.add_space(8.0);
-                        if ui.checkbox(&mut state.config.capture.capture_cursor, "").changed() {
+                        if ui
+                            .checkbox(&mut state.config.capture.capture_cursor, "")
+                            .changed()
+                        {
                             changed.set(true);
                         }
                     });
@@ -129,19 +170,31 @@ pub fn render_settings_view(
                     ui.horizontal(|ui| {
                         ui.label("Draw capture border:");
                         ui.add_space(8.0);
-                        if ui.checkbox(&mut state.config.capture.draw_border, "").changed() {
+                        if ui
+                            .checkbox(&mut state.config.capture.draw_border, "")
+                            .changed()
+                        {
                             changed.set(true);
                         }
                     });
 
-                    let mut target = state.config.capture.target_window.clone().unwrap_or_default();
+                    let mut target = state
+                        .config
+                        .capture
+                        .target_window
+                        .clone()
+                        .unwrap_or_default();
                     drop(state); // Release lock before text edit
                     ui.horizontal(|ui| {
                         ui.label("Target window:");
                         ui.add_space(8.0);
                         if ui.text_edit_singleline(&mut target).changed() {
                             let mut state = shared_state.write();
-                            state.config.capture.target_window = if target.is_empty() { None } else { Some(target) };
+                            state.config.capture.target_window = if target.is_empty() {
+                                None
+                            } else {
+                                Some(target)
+                            };
                             changed.set(true);
                         }
                     });
@@ -157,15 +210,25 @@ pub fn render_settings_view(
             .rounding(egui::Rounding::same(8.0))
             .inner_margin(16.0)
             .show(ui, |ui| {
-                let header_response = ui.horizontal(|ui| {
-                    let arrow = if is_overlay_expanded { "v" } else { ">" };
-                    ui.label(RichText::new(arrow).size(12.0).color(ThemeColors::TEXT_MUTED));
-                    ui.add_space(8.0);
-                    ui.heading(RichText::new("Overlay").size(16.0));
-                }).response;
+                let header_response = ui
+                    .horizontal(|ui| {
+                        let arrow = if is_overlay_expanded { "v" } else { ">" };
+                        ui.label(
+                            RichText::new(arrow)
+                                .size(12.0)
+                                .color(ThemeColors::TEXT_MUTED),
+                        );
+                        ui.add_space(8.0);
+                        ui.heading(RichText::new("Overlay").size(16.0));
+                    })
+                    .response;
 
                 if header_response.interact(egui::Sense::click()).clicked() {
-                    view_state.expanded_section = if is_overlay_expanded { None } else { Some(SettingsSection::Overlay) };
+                    view_state.expanded_section = if is_overlay_expanded {
+                        None
+                    } else {
+                        Some(SettingsSection::Overlay)
+                    };
                 }
 
                 if is_overlay_expanded {
@@ -188,7 +251,9 @@ pub fn render_settings_view(
                         ui.label("Opacity:");
                         ui.add_space(8.0);
                         let mut opacity = state.config.overlay.opacity;
-                        if add_scroll_slider(ui, &mut opacity, 0.1..=1.0, Some(0.05), None, None).changed() {
+                        if add_scroll_slider(ui, &mut opacity, 0.1..=1.0, Some(0.05), None, None)
+                            .changed()
+                        {
                             state.config.overlay.opacity = opacity;
                             state.overlay_config.opacity = opacity;
                             changed.set(true);
@@ -198,7 +263,10 @@ pub fn render_settings_view(
                     ui.horizontal(|ui| {
                         ui.label("Sound notifications:");
                         ui.add_space(8.0);
-                        if ui.checkbox(&mut state.config.overlay.sound_enabled, "").changed() {
+                        if ui
+                            .checkbox(&mut state.config.overlay.sound_enabled, "")
+                            .changed()
+                        {
                             changed.set(true);
                         }
                     });
@@ -211,7 +279,9 @@ pub fn render_settings_view(
                         ui.horizontal(|ui| {
                             ui.label("Sound volume:");
                             ui.add_space(8.0);
-                            if add_scroll_slider(ui, &mut volume, 0.0..=1.0, Some(0.05), None, None).changed() {
+                            if add_scroll_slider(ui, &mut volume, 0.0..=1.0, Some(0.05), None, None)
+                                .changed()
+                            {
                                 let mut state = shared_state.write();
                                 state.config.overlay.sound_volume = volume;
                                 changed.set(true);
@@ -230,15 +300,25 @@ pub fn render_settings_view(
             .rounding(egui::Rounding::same(8.0))
             .inner_margin(16.0)
             .show(ui, |ui| {
-                let header_response = ui.horizontal(|ui| {
-                    let arrow = if is_perf_expanded { "v" } else { ">" };
-                    ui.label(RichText::new(arrow).size(12.0).color(ThemeColors::TEXT_MUTED));
-                    ui.add_space(8.0);
-                    ui.heading(RichText::new("Performance").size(16.0));
-                }).response;
+                let header_response = ui
+                    .horizontal(|ui| {
+                        let arrow = if is_perf_expanded { "v" } else { ">" };
+                        ui.label(
+                            RichText::new(arrow)
+                                .size(12.0)
+                                .color(ThemeColors::TEXT_MUTED),
+                        );
+                        ui.add_space(8.0);
+                        ui.heading(RichText::new("Performance").size(16.0));
+                    })
+                    .response;
 
                 if header_response.interact(egui::Sense::click()).clicked() {
-                    view_state.expanded_section = if is_perf_expanded { None } else { Some(SettingsSection::Performance) };
+                    view_state.expanded_section = if is_perf_expanded {
+                        None
+                    } else {
+                        Some(SettingsSection::Performance)
+                    };
                 }
 
                 if is_perf_expanded {
@@ -252,7 +332,9 @@ pub fn render_settings_view(
                         ui.label("Max CPU usage:");
                         ui.add_space(8.0);
                         let mut cpu = state.config.performance.max_cpu_percent as f32;
-                        if add_scroll_slider(ui, &mut cpu, 1.0..=50.0, Some(5.0), Some("%"), None).changed() {
+                        if add_scroll_slider(ui, &mut cpu, 1.0..=50.0, Some(5.0), Some("%"), None)
+                            .changed()
+                        {
                             state.config.performance.max_cpu_percent = cpu as u32;
                             changed.set(true);
                         }
@@ -262,7 +344,16 @@ pub fn render_settings_view(
                         ui.label("Max memory:");
                         ui.add_space(8.0);
                         let mut mem = state.config.performance.max_memory_mb as f32;
-                        if add_scroll_slider(ui, &mut mem, 128.0..=2048.0, Some(64.0), Some(" MB"), None).changed() {
+                        if add_scroll_slider(
+                            ui,
+                            &mut mem,
+                            128.0..=2048.0,
+                            Some(64.0),
+                            Some(" MB"),
+                            None,
+                        )
+                        .changed()
+                        {
                             state.config.performance.max_memory_mb = mem as u32;
                             changed.set(true);
                         }
@@ -271,14 +362,17 @@ pub fn render_settings_view(
                     ui.horizontal(|ui| {
                         ui.label("Idle optimization:");
                         ui.add_space(8.0);
-                        if ui.checkbox(&mut state.config.performance.idle_optimization, "").changed() {
+                        if ui
+                            .checkbox(&mut state.config.performance.idle_optimization, "")
+                            .changed()
+                        {
                             changed.set(true);
                         }
                     });
                     ui.label(
                         RichText::new("Reduce activity when game is paused or in menu")
                             .size(11.0)
-                            .color(ThemeColors::TEXT_MUTED)
+                            .color(ThemeColors::TEXT_MUTED),
                     );
                 }
             });
@@ -287,10 +381,10 @@ pub fn render_settings_view(
 
         // Reset button and auto-save indicator
         ui.horizontal(|ui| {
-            if ui.add(
-                egui::Button::new("Reset to Defaults")
-                    .min_size(egui::vec2(120.0, 36.0))
-            ).clicked() {
+            if ui
+                .add(egui::Button::new("Reset to Defaults").min_size(egui::vec2(120.0, 36.0)))
+                .clicked()
+            {
                 let mut state = shared_state.write();
                 state.config = crate::config::AppConfig::default();
                 state.overlay_config.opacity = state.config.overlay.opacity;
@@ -304,7 +398,7 @@ pub fn render_settings_view(
             ui.label(
                 RichText::new("Settings are saved automatically")
                     .size(12.0)
-                    .color(ThemeColors::TEXT_MUTED)
+                    .color(ThemeColors::TEXT_MUTED),
             );
         });
     });
